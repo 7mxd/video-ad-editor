@@ -22,7 +22,7 @@ except Exception:
     pass
 _real_open = _bi.open
 def _utf8_open(f, mode="r", *a, **k):
-    if "b" not in mode:
+    if "b" not in mode and len(a) < 2:
         k.setdefault("encoding", "utf-8")
     return _real_open(f, mode, *a, **k)
 _bi.open = _utf8_open
@@ -213,6 +213,6 @@ print(f"""
 ✅ تم. الحين أعد بناء الفيديو:
    python scripts/03_cut_zoom.py {W}
    mkdir -p {W}/vfr && ffmpeg -v error -i {W}/cutz.mp4 -vf fps=30 -q:v 3 -y {W}/vfr/%05d.jpg
-   node scripts/04_render_frames.js {W} all --force     (أو 04b_remotion.sh {W} render)
+   node scripts/04_render_frames.js {W} all --force
 ⚠️ لو كنت مصمّماً مشاهد بأوقات ثابتة — أوقاتها انزاحت، راجعها.
 ↩️ للتراجع: python scripts/10_script_edit.py {W} undo""")

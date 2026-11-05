@@ -1,12 +1,26 @@
 # -*- coding: utf-8 -*-
 """بودكاست كامل بالعرض 16:9 (يوتيوب) من ملفات الكاميرات الخام — مو ريل.
-   python3 24_podcast_wide.py prep   <work> <مجلد_الكاميرات | ملف1 ملف2 …>   ← مزامنة بالصوت · صوت رئيسي · وجوه وفم · مين يتكلم
-   python3 24_podcast_wide.py plan   <work> [--min 2.0] [--wide-every 45]      ← خطة القطعات edl.json + ملخص
-   python3 24_podcast_wide.py render <work> [--preview 90] [--from 0]          ← الحلقة episode-wide.mp4 (أو مقطع معاينة)
+   python 24_podcast_wide.py prep   <work> <مجلد_الكاميرات | ملف1 ملف2 …>   ← مزامنة بالصوت · صوت رئيسي · وجوه وفم · مين يتكلم
+   python 24_podcast_wide.py plan   <work> [--min 2.0] [--wide-every 45]      ← خطة القطعات edl.json + ملخص
+   python 24_podcast_wide.py render <work> [--preview 90] [--from 0]          ← الحلقة episode-wide.mp4 (أو مقطع معاينة)
    - الكاميرا اللي فيها شخصين أو أكثر = «الواسعة» (افتتاحية، سكتات، تداخل كلام، وكل --wide-every ثانية).
    - الباقي «قريبة»: تنتقل لكاميرا اللي يتكلم إذا استمر كلامه ثانية أو أكثر، وأقصر لقطة --min ثانية.
    - الصوت من المايك الأعلى (أو ملف صوت مستقل اسمه فيه audio/mic/zoom/rode)، ومعايَر ‎-14 LUFS.
-   - ما فيه كابشن ولا قص سكتات افتراضاً — حلقة كاملة كما انقالت. ماك فقط (Vision للوجوه)."""
+   - ما فيه كابشن ولا قص سكتات افتراضاً — حلقة كاملة كما انقالت. الوجوه: Vision بالماك، وإلا OpenCV بديل (_faces.py)."""
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import sys, os, json, glob, subprocess, importlib.util, shutil
 import numpy as np
 SC = os.path.dirname(os.path.abspath(__file__))
@@ -54,9 +68,10 @@ def prep(W, args):
         master = {"file": best["file"], "offset": best["offset"]}; print(f"الصوت: من {best['name']}")
     # فريمات خفيفة بلا قص (الواسعة لازم تبين كاملة) + الوجوه
     ft = os.path.join(W, "bt", "facetrack")
-    if not os.path.exists(ft):
-        r = P.sh(["swiftc", "-O", "-o", ft, os.path.join(SC, "facetrack.swift")])
-        if r.returncode != 0: sys.exit("❌ راصد الوجه يحتاج أدوات Xcode: xcode-select --install")
+    os.makedirs(os.path.dirname(ft), exist_ok=True)
+    fkind, ftc = P.tracker_cmd(ft)   # ماك: Vision (ما تغيّر) · غيره: OpenCV بديل · ولا واحد: بلا تتبّع
+    if fkind == "opencv": print("⚠️ تتبّع الوجه: OpenCV بديل (ما فيه swiftc/Vision) — أقل دقة من الماك")
+    elif not fkind: print("⚠️ ما فيه راصد وجه (Vision يحتاج ماك · OpenCV: 00_setup.sh --extras) — بلا تتبّع")
     procs = []
     for c in cams:
         lo = os.path.join(W, "lo", f"cam{c['id']}"); os.makedirs(lo, exist_ok=True)
@@ -64,7 +79,9 @@ def prep(W, args):
                                        "-vf", f"fps={P.LOFPS},scale=480:-2", "-q:v", "5", os.path.join(lo, "%06d.jpg")]))
     for p in procs: p.wait()
     for c in cams:
-        P.sh([ft, os.path.join(W, "lo", f"cam{c['id']}"), os.path.join(W, "bt", f"face{c['id']}.json")])
+        lo, fj = os.path.join(W, "lo", f"cam{c['id']}"), os.path.join(W, "bt", f"face{c['id']}.json")
+        if ftc: P.sh(ftc + [lo, fj])
+        else: P.write_empty(lo, fj)
         rows = json.load(open(os.path.join(W, "bt", f"face{c['id']}.json")))
         ns = [r.get("n", 0) for r in rows]
         c["faces_n"] = float(np.median(ns)) if ns else 0; c["face_rate"] = round(sum(1 for n in ns if n) / max(1, len(ns)), 2)

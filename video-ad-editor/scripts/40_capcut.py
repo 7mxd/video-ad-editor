@@ -3,14 +3,14 @@
 لقطات + زوم كيفريمات + نصوص/كابشن كاب كت + فويس منظّف + مؤثرات + خلفية صوتية + طبقات موشن ProRes 4444 شفافة.
 الشرح الكامل والصيغة ← references/capcut.md
 
-  python3 40_capcut.py projects                         ← مشاريع كاب كت الموجودة (اسم المجلد = --draft)
-  python3 40_capcut.py skeleton <work> <plan.json>      ← خطة أولية من cut.json + تفريغ وِسبر (a.json) — عدّلها بعدين
-  python3 40_capcut.py check  <plan.json>               ← يحسب الخط الزمني ويطبع اللقطات (بلا رسم ولا كتابة)
-  python3 40_capcut.py stills <plan.json> [اسم]          ← لقطتين PNG من كل موشن عشان تعرضها قبل الرسم
-  python3 40_capcut.py render <plan.json> [اسم]          ← يرسم الموشن ProRes 4444 بشفافية
-  python3 40_capcut.py sfx    <plan.json>               ← لوحة المؤثرات (ملف لكل مؤثر = مقطع مستقل بكاب كت)
-  python3 40_capcut.py write  <plan.json> [--draft-dir D] ← يكتب المشروع (كاب كت لازم يكون مسكّر)
-  python3 40_capcut.py all    <plan.json>               ← sfx + render + write
+  python 40_capcut.py projects                         ← مشاريع كاب كت الموجودة (اسم المجلد = --draft)
+  python 40_capcut.py skeleton <work> <plan.json>      ← خطة أولية من cut.json + تفريغ وِسبر (a.json) — عدّلها بعدين
+  python 40_capcut.py check  <plan.json>               ← يحسب الخط الزمني ويطبع اللقطات (بلا رسم ولا كتابة)
+  python 40_capcut.py stills <plan.json> [اسم]          ← لقطتين PNG من كل موشن عشان تعرضها قبل الرسم
+  python 40_capcut.py render <plan.json> [اسم]          ← يرسم الموشن ProRes 4444 بشفافية
+  python 40_capcut.py sfx    <plan.json>               ← لوحة المؤثرات (ملف لكل مؤثر = مقطع مستقل بكاب كت)
+  python 40_capcut.py write  <plan.json> [--draft-dir D] ← يكتب المشروع (كاب كت لازم يكون مسكّر)
+  python 40_capcut.py all    <plan.json>               ← sfx + render + write
 
 كاب كت ماك بساندبوكس: يقرا ~/Movies بس → كل الأصول المولّدة والمنسوخة تنحط بـ~/Movies/capcut-<name>/.
 القالب (حقول كاب كت نسخة 183) والموشن HTML وراسمه مدمجين هني عشان البلقن يبقى تحت حد الملفات.
@@ -22,7 +22,7 @@ except Exception:
     pass
 _real_open = _bi.open
 def _utf8_open(f, mode="r", *a, **k):
-    if "b" not in mode: k.setdefault("encoding", "utf-8")
+    if "b" not in mode and len(a) < 2: k.setdefault("encoding", "utf-8")
     return _real_open(f, mode, *a, **k)
 _bi.open = _utf8_open
 import json, os, re, sys, copy, uuid, shutil, subprocess, base64, zlib, time, glob, platform
@@ -30,6 +30,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent            # scripts/
 SKILL = HERE.parent
+sys.path.insert(0, str(HERE))
+from _chrome import find_chrome   # بحث كروم الموحّد
 FONTS_DIR = SKILL / "motion" / "fonts"
 FPS = 30
 IS_MAC = platform.system() == "Darwin"
@@ -312,10 +314,7 @@ const fs=require('fs'),path=require('path'),{execFileSync}=require('child_proces
 const [W,SKILL,only,mode]=process.argv.slice(2), FPS=30;
 function pup(){for(const p of [process.env.PUPPETEER_PATH,path.join(SKILL,'node_modules/puppeteer-core'),'puppeteer-core','puppeteer',path.join(process.cwd(),'node_modules/puppeteer-core')]){
   if(!p)continue;try{return require(p)}catch(e){}}throw new Error('ما لقيت puppeteer-core — ثبّته بمجلد السكل: npm i puppeteer-core');}
-function chrome(){if(process.env.CHROME_PATH)return process.env.CHROME_PATH;const LA=process.env.LOCALAPPDATA||'',PF=process.env.ProgramFiles||'C:/Program Files';
-  for(const c of ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',PF+'/Google/Chrome/Application/chrome.exe',LA+'/Google/Chrome/Application/chrome.exe',
-    PF+'/Microsoft/Edge/Application/msedge.exe','/usr/bin/google-chrome','/usr/bin/chromium','/usr/bin/chromium-browser'])if(c&&fs.existsSync(c))return c;
-  throw new Error('ما لقيت كروم — حدّد CHROME_PATH');}
+function chrome(){return process.env.CHROME_PATH;}   /* 40_capcut.py يمرّره من _chrome.find_chrome() */
 const plan=JSON.parse(fs.readFileSync(path.join(W,'plan.resolved.json'),'utf8'));
 (async()=>{
   const br=await pup().launch({executablePath:chrome(),headless:'new',args:['--no-sandbox','--allow-file-access-from-files','--font-render-hinting=none','--force-color-profile=srgb']});
@@ -357,7 +356,7 @@ def cmd_render(P, only="all", mode="video"):
     if not R["overlays"]: print("ما فيه موشن بالخطة"); return
     if mode != "stills" and "prores_ks" not in subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True).stdout:
         die("ffmpeg هذا ما فيه prores_ks — الموشن الشفاف يحتاجه")
-    env = dict(os.environ, NODE_PATH=os.pathsep.join([str(SKILL / "node_modules"), os.environ.get("NODE_PATH", "")]))
+    env = dict(os.environ, CHROME_PATH=find_chrome(), NODE_PATH=os.pathsep.join([str(SKILL / "node_modules"), os.environ.get("NODE_PATH", "")]))
     r = subprocess.run(["node", str(w / "_capcut" / "render.js"), str(w), str(SKILL), only, mode], env=env)
     if r.returncode: die("الرسم فشل — شوف الرسالة فوق (لا تعيده قبل ما تعرف السبب)")
     if mode == "stills": print("🖼  اللقطات بـ", w / "stills")
@@ -392,7 +391,7 @@ def cmd_sfx(P):
 
 # ════════════════════════ 5) كاتب مشروع كاب كت ════════════════════════
 # حقول كاب كت (draft نسخة 183.0.0، كاب كت 9.x) من مشروع حقيقي فيه نص + كيفريمات + صوت — بلا أي مسار أو محتوى شخصي.
-# لفكّه وتشوفه:  python3 40_capcut.py dump-template
+# لفكّه وتشوفه:  python 40_capcut.py dump-template
 TEMPLATE = "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"
 REF = json.loads(zlib.decompress(base64.b64decode(TEMPLATE)).decode())
 

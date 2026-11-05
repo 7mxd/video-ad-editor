@@ -1,11 +1,25 @@
 #!/usr/bin/env python3
 """خلفية باهتة — «كأنه وضع سينماتيك»: المتحدث واضح والخلفية ورا لون كريمي (لون الثيم).
-   python3 14_backdrop.py <work> [قوة 0..1 = 0.62]
+   python 14_backdrop.py <work> [قوة 0..1 = 0.62]
 
    يبني <work>/cover/NNNNN.png لكل فريم من vfr/: صورة تغطية بلون الخلفية وألفا = (1 − قناع الشخص) × القوة،
    بنصف الدقة (حواف أنعم وحجم أصغر). المحرّك يرسمها فوق الفيديو بنفس قصّه — بكل الأوضاع، فالانتقالات سلسة.
    القناع من personmask.swift (Vision المدمج بماك) أو من مجلد cmask/ إن كان موجوداً.
    للإلغاء: امسح مجلد cover/ وأعد الرسم."""
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import sys, os, json, subprocess, shutil
 import numpy as np
 from PIL import Image, ImageFilter
@@ -28,6 +42,8 @@ def ensure_masks():
     sw = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'personmask.swift')
     binp = W + 'bt/personmask'
     os.makedirs(W + 'bt', exist_ok=True); os.makedirs(mdir, exist_ok=True)
+    if not os.path.exists(binp) and not shutil.which('swiftc'):
+        print('⛔ قصّ الشخص (الخلفية) يحتاج ماك + swiftc — ما يشتغل على هالجهاز'); sys.exit(4)
     if not os.path.exists(binp):
         r = subprocess.run(['swiftc', '-O', '-o', binp, sw], capture_output=True)
         if r.returncode != 0:

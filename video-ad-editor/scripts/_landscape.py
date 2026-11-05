@@ -35,7 +35,7 @@ def _faces(src, s, e, work, tag, ft):
                     "-vf", "fps=4,scale=480:-2", "-q:v", "4", os.path.join(d, "%05d.jpg")])
     js = os.path.join(d, "ft.json")
     subprocess.run([ft, d, js], capture_output=True)
-    rows = json.load(open(js)) if os.path.exists(js) else []
+    rows = json.load(open(js, encoding="utf-8")) if os.path.exists(js) else []
     out = []
     for r in rows:   # عيّنة بلا وجه تنحفظ (None) عشان نعرف نسبة الوجه داخل كل لقطة
         f = r.get("face"); t = s + (int(r["f"][:5]) - 1) / 4
@@ -49,7 +49,7 @@ def _faces_hi(src, s, e, work, tag, ft):
         subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-ss", f"{t:.3f}", "-i", src, "-frames:v", "1", "-q:v", "3", "-y",
                         os.path.join(d, f"{j+1:05d}.jpg")])
     js = os.path.join(d, "ft.json"); subprocess.run([ft, d, js], capture_output=True)
-    rows = json.load(open(js)) if os.path.exists(js) else []
+    rows = json.load(open(js, encoding="utf-8")) if os.path.exists(js) else []
     return [(s, r["face"]["x"] + r["face"]["w"] / 2, r["face"]["y"] + r["face"]["h"] / 2, r["face"]["w"]) for r in rows if r.get("face")]
 
 def plan(src, work, keep, SW, SH, zooms, anch=0.30):
@@ -81,13 +81,37 @@ def plan(src, work, keep, SW, SH, zooms, anch=0.30):
         if sh["kind"] != "center": continue
         nb = sorted((abs(k - j), k) for k, x in enumerate(shots) if x["kind"] == "face")
         if nb: a, c, _, _, zz = sh["_p"]; k = nb[0][1]; sh["_p"] = (a, c, shots[k]["_p"][2], 0.40, zz); sh["kind"] = "near"
+    # قصّ معدّل باليد بـshots.json (references/landscape.md: «عدّل crop وأعد 03») يبقى لنفس اللقطة.
+    # كل لقطة تحفظ «auto» (الحساب الآلي) و«sig» (حجم المصدر ومقاسه). اليدوي = crop ≠ auto، بنفس المصدر ونفس
+    # الحساب الآلي. مصدر ثاني، أو حساب آلي تغيّر (ماك بعد ويندوز، زوم مختلف)، أو ملف قديم بلا auto ← يرجع آلي.
+    try:
+        sig = f"{os.path.getsize(src)}:{SW}x{SH}"
+    except OSError:
+        sig = f"?:{SW}x{SH}"
+    old = {}
+    sj = os.path.join(work, "shots.json")
+    if os.path.exists(sj):
+        try:
+            old = {tuple(o["src"]): o for o in json.load(open(sj, encoding="utf-8")) if o.get("src")}
+        except (ValueError, KeyError, TypeError):
+            old = {}
     for sh in shots:
         a, c, cx, cy, zz = sh.pop("_p")
         h = min(SH, int(SH / zz)) // 2 * 2; w = min(SW, int(h * 9 / 16)) // 2 * 2
         x = int(min(max(cx * SW - w / 2, 0), SW - w))
         y = int(min(max(cy * SH - h * anch, 0), SH - h))
+        auto = [w, h, x, y]
+        o = old.get(tuple(sh["src"])) or {}
+        hand = o.get("crop")
+        if (hand and o.get("auto") and o.get("sig") == sig and list(o["auto"]) == auto
+                and list(hand) != list(o["auto"])):
+            h = min(int(hand[1]), SH) // 2 * 2 or h                  # الارتفاع من اليد، والعرض يتبع 9:16
+            w = min(SW, int(h * 9 / 16)) // 2 * 2
+            x = int(min(max(int(hand[2]), 0), SW - w)); y = int(min(max(int(hand[3]), 0), SH - h))
+            sh["manual"] = True
+        sh["auto"] = auto; sh["sig"] = sig
         pieces.append((a, c, f"crop={w}:{h}:{x}:{y}")); sh["crop"] = [w, h, x, y]
-    json.dump(shots, open(os.path.join(work, "shots.json"), "w"), ensure_ascii=False, indent=1)
+    json.dump(shots, open(os.path.join(work, "shots.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     small = sum(1 for x in shots if x["kind"] == "face" and x["face_w"] < 0.07)
     print(f"📐 الفيديو بالعرض ({SW}×{SH}) — قصّيته بالطول حول الوجه: {len(shots)} لقطة"
           + (f" · {small} عريضة قرّبت عليها" if small else "")

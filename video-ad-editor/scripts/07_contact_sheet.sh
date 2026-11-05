@@ -22,7 +22,7 @@ for t in "$@"; do
   else ffmpeg -v error -i "$PV" -vf "$VF" -y "$f"; fi
 done
 
-if "${PY:-python3}" - "$OUT" "$TMP" "$COLS" "$@" <<'PY' 2>/dev/null
+if "${PY:-python}" - "$OUT" "$TMP" "$COLS" "$@" <<'PY' 2>/dev/null
 import sys, os, glob
 from PIL import Image, ImageDraw, ImageFont
 out, tmp, cols = sys.argv[1], sys.argv[2], int(sys.argv[3]); times = sys.argv[4:]

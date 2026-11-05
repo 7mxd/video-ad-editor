@@ -40,14 +40,8 @@ function resolvePuppeteer() {
     path.join(__dirname, '../../node_modules/puppeteer-core')]) { if (!p) continue; try { return require(p); } catch (e) { } }
   throw new Error('ما لقيت puppeteer-core — ثبّته: npm i puppeteer-core');
 }
-function findChrome() {
-  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
-  const LA = process.env.LOCALAPPDATA || '', PF = process.env.ProgramFiles || 'C:/Program Files', P86 = process.env['ProgramFiles(x86)'] || 'C:/Program Files (x86)';
-  for (const c of ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', PF + '/Google/Chrome/Application/chrome.exe', P86 + '/Google/Chrome/Application/chrome.exe',
-    LA + '/Google/Chrome/Application/chrome.exe', PF + '/Microsoft/Edge/Application/msedge.exe', P86 + '/Microsoft/Edge/Application/msedge.exe',
-    '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser']) { try { if (c && fs.existsSync(c)) return c; } catch (e) { } }
-  throw new Error('ما لقيت كروم — حدّد CHROME_PATH');
-}
+const { findChrome, pickPython } = require(path.join(__dirname, '_find_chrome.js'));
+const { fontCss } = require(path.join(__dirname, '_fonts.js'));   // الخطوط من motion/fonts — بلا شبكة
 const probe = f => { try { return JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration:stream=codec_type,width,height', '-of', 'json', f]).toString()); } catch (e) { return null; } };
 
 (async () => {
@@ -66,7 +60,7 @@ const probe = f => { try { return JSON.parse(execFileSync('ffprobe', ['-v', 'err
 
   /* 1) النبضات والقطعات */
   const bp = path.resolve(opt('--beats', W + 'beats.json'));
-  if (!fs.existsSync(bp)) { console.error('❌ ما فيه ' + bp + ' — شغّل أول: python3 scripts/beat.py <الأغنية> --out ' + bp); process.exit(2); }
+  if (!fs.existsSync(bp)) { console.error('❌ ما فيه ' + bp + ' — شغّل أول: ' + pickPython() + ' scripts/beat.py <الأغنية> --out ' + bp); process.exit(2); }
   const B = JSON.parse(fs.readFileSync(bp, 'utf8'));
   let cuts = [];
   const cp = opt('--cuts', fs.existsSync(W + 'montage.json') ? W + 'montage.json' : null);
@@ -122,7 +116,7 @@ const probe = f => { try { return JSON.parse(execFileSync('ffprobe', ['-v', 'err
   const FONT = TH.font || 'Cairo';
   const html = W + '.beatfx.html';
   fs.writeFileSync(html, `<!DOCTYPE html><html><head><meta charset="utf-8">
-<link href="https://fonts.googleapis.com/css2?family=${encodeURIComponent(FONT)}:wght@900&display=swap" rel="stylesheet">
+<style>${fontCss(FONT, [900])}</style>
 <style>html,body{margin:0;background:#000}</style></head><body><canvas id="cv" width="${VW}" height="${VH}"></canvas>
 <script src="${fileURL(path.join(__dirname, 'beat-fx.js'))}"></script>
 <script>

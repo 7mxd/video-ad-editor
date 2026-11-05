@@ -9,10 +9,10 @@
 ## الوصفة (3 خطوات، أمرين)
 ```bash
 # 1) الصورة — من فريم وجهه + (اختياري) صورة مرجع للتكوين/الكرسي. خيارين، اعرضهم واختر
-python3 scripts/21_avatar_scene.py <work> still 31.3 "He sits relaxed on a modern white armchair in a seamless pure white studio, black trousers and black sneakers." ref_chair.jpg
+python scripts/21_avatar_scene.py <work> still 31.3 "He sits relaxed on a modern white armchair in a seamless pure white studio, black trousers and black sneakers." ref_chair.jpg
 # 2) الكلام — صوته الحقيقي لنفس المدى بالضبط → أفاتار كلينق → فريمات clips/seat_####.jpg
-python3 scripts/21_avatar_scene.py <work> talk 29.20 34.87 <work>/ai/avatar_still0.jpg seat          # يطبع التكلفة بس
-python3 scripts/21_avatar_scene.py <work> talk 29.20 34.87 <work>/ai/avatar_still0.jpg seat --yes    # بعد موافقته
+python scripts/21_avatar_scene.py <work> talk 29.20 34.87 <work>/ai/avatar_still0.jpg seat          # يطبع التكلفة بس
+python scripts/21_avatar_scene.py <work> talk 29.20 34.87 <work>/ai/avatar_still0.jpg seat --yes    # بعد موافقته
 # 3) ارسمه بمشهد video-layer (الكود تحت) + nocap بنفس المدى + الشرح فوقه بالكود
 ```
 - **المدى = من لحظة الطقة/التحوّل إلى نهاية آخر جملة بالمشهد** (من `caps.json`). الفريم 1 = لحظة `من` بالضبط → الشفايف على صوته الأصلي (صوت الفيديو يبقى صوت التصوير، مو صوت الموديل).

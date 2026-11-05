@@ -7,9 +7,23 @@
 ← نأخذ **أعلى نقطة وصلها راسه بالفيديو كله** (الشريحة 3٪ — تتجاهل رصداً شاذاً) ناقص هامش PAD
 ← رقم واحد يكتب <work>/studio.json ← "cardTop" (نسبة من ارتفاع الفريم). المحرّك يبدأ قصّ الكرت منه.
 
-python3 23_headcrop.py <work> [--from 2.0]   # بعد الخطوة 6 · --from = بداية أول كرت (ملء الشاشة قبله ما يحتاج)
+python 23_headcrop.py <work> [--from 2.0]   # بعد الخطوة 6 · --from = بداية أول كرت (ملء الشاشة قبله ما يحتاج)
 theme.json ← "cardZoom" (افتراضي 1): تقريب داخل الكرت — يفيد لو تحت جسمه نص محروق أو فراغ كبير
 """
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import json, os, statistics, subprocess, sys, tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

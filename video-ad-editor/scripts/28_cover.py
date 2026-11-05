@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """كفر الريل (v2 — 3 أكتوبر 2026) — ويتحط أول فريم بالفيديو
-   python3 28_cover.py <work> "سطر أول|*سطر ثاني ملوّن*" ["سطر صغير فوقه"]
+   python 28_cover.py <work> "سطر أول|*سطر ثاني ملوّن*" ["سطر صغير فوقه"]
         [--photo me.png]            صورته مقصوصة (خلفية شفافة) — من عنده
         [--cut]                     صورته من الفيديو: أحسن فريم مقصوص (_cutout.py — ماك) على خلفية كريمية
         (بلا الاثنين: الفريم كامل بخلفيته — اسأل المستخدم أول: «آخذ صورتك من الفيديو ولا عندك صور تعطيني؟»)
@@ -16,11 +16,25 @@
       المربع وهمي: لا إطار ولا خط. برّاه خلفية بس (أو كمّلة الجسم).
    الكلام هوك مختصر (سطرين + سطر صغير) على الصدر أو تحته شوي.
    🙂 6.0: الوجه ما يتغطى أبداً — السكربت يرصد الوجه (ماك) ويصغّر الصورة المقصوصة أو يرفع الفريم لين الذقن فوق أعلى الكلام بـ30px.
-   📏 أحجام تنقرا بشبكة الجوال (بحث + قياس شاشة ماجد 3 أكتوبر — references/thumbnails.md):
+   📏 أحجام تنقرا بشبكة الجوال (بحث + قياس شاشة ماجد 3 أكتوبر — references/cover.md):
       الكفر ينعرض ≈ 0.12 من حجمه، وأصغر خط مقروء 11 نقطة ⇒ ولا نص تحت 91 بكسل.
       العنوان العربي ≥ 170 · السطر الصغير ≥ 110 · الشعار ≥ 200 · 5 كلمات بالكثير · بلا الحساب (ما ينقرا ومكانه البروفايل).
    ✕/✓ مو قاعدة: بس لو العنوان «من كذا لكذا» (ترك شي لشي). الشعارات صف تحت الوجه — مو على الراس.
    يطلّع: cover.jpg (1080×1920) + cover_grid.jpg (معاينة: 9:16 · 4:5 · 1:1 جنب بعض) — اعرض الثانية."""
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import sys, os, json, subprocess, tempfile, html
 import numpy as np
 from PIL import Image
@@ -29,11 +43,9 @@ SQ0, SQ1 = 420, 1500          # المربع الآمن 1:1 بنص 9:16
 
 def arg(n, d):
     return type(d)(sys.argv[sys.argv.index(n) + 1]) if n in sys.argv else d
-def chrome():
-    for p in [os.environ.get("CHROME", ""), "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-              "C:/Program Files/Google/Chrome/Application/chrome.exe", "/usr/bin/google-chrome", "/usr/bin/chromium"]:
-        if p and os.path.exists(p): return p
-    sys.exit("❌ ما لقيت كروم")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _chrome import find_chrome as chrome   # بحث كروم الموحّد (ويندوز/ماك/لينكس)
+from _fonts import font_css, base_url as fonts_base   # الخطوط من motion/fonts — بلا شبكة
 def dur(f):
     return float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", f], capture_output=True, text=True).stdout)
 def pick(video, n, cache=None):
@@ -168,7 +180,7 @@ def main():
     if longest > 9: print(f"⚠️ سطر طويل ({longest} حرف) — بحجم 170 يدخل 9 أحرف بالسطر بس؛ اختصر العنوان (الشعارات والصورة تكمّل المعنى)")
     if title.count('|') > 1: print("⚠️ أكثر من سطرين — بيطلع على الوجه؛ خله سطرين بالكثير")
     page = f"""<!doctype html><html dir="ltr"><head><meta charset="utf-8"><style>
-@import url('https://fonts.googleapis.com/css2?family={font.replace(' ', '+')}:wght@700;800;900&display=swap');
+{font_css(font, [700, 800, 900], fonts_base())}
 *{{margin:0}} html{{overflow:hidden}} body{{width:1080px;height:1920px;position:relative;overflow:hidden;direction:ltr;font-family:'{font}',Tajawal,'Geeza Pro',sans-serif;background:#000}}
 {bgcss}
 .fr{{position:absolute;left:0;top:0;width:1080px;height:1920px;object-fit:cover}}

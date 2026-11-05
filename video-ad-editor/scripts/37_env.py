@@ -1,10 +1,24 @@
 # -*- coding: utf-8 -*-
 """🆕 6.0 موجة صوته الحقيقي — غلاف الصوت (loudness) لكل فريم، عشان الرسم يتحرك مع كلامه فعلاً (ريل بوبيان).
-   python3 37_env.py <work> [--src cutz.mp4] [--fps 30]
+   python 37_env.py <work> [--src cutz.mp4] [--fps 30]
    - يقرا صوت الفيديو المقصوص (cutz.mp4 — نفس توقيت caps.json) ويكتب <work>/env.js:
        window.ENV=[0..1 لكل فريم]
    - بـcompose.html: <script src="env.js"></script> قبل مشاهدك، وبالمشهد: MV.env(t) → 0..1 (صفر = سكتة).
-   - مثال (موجة أعمدة ورا راسه): ارتفاع العمود = 18 + 420 * MV.env(t - تأخير) — شوف references/moves.md «لحظات العمق»."""
+   - مثال (موجة أعمدة ورا راسه): ارتفاع العمود = 18 + 420 * MV.env(t - تأخير) — شوف references/moves/depth.md «لحظات العمق»."""
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import sys, os, json, subprocess
 import numpy as np
 

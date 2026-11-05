@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """صورة الشخص من الفيديو نفسه — يختار أحسن فريم (وجه كبير + واضح) ويقصّه بخلفية شفافة.
    يستخدمه 28_cover.py (--cut) و33_thumb.py (--video). القص بـpersonmask.swift (Vision المدمج بالماك).
-   python3 _cutout.py <video> <out.png> [--t 3.2] [--n 12]"""
+   python _cutout.py <video> <out.png> [--t 3.2] [--n 12]"""
 import os, sys, json, shutil, subprocess, tempfile
 import numpy as np
 from PIL import Image
@@ -48,7 +48,7 @@ def faces_in(folder, cache):
     if not b: return {}
     out = os.path.join(folder, "_faces.json")
     if subprocess.run([b, folder, out], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode or not os.path.exists(out): return {}
-    return {r["f"]: dict(r["face"], n=r.get("n", 1)) for r in json.load(open(out)) if "face" in r}
+    return {r["f"]: dict(r["face"], n=r.get("n", 1)) for r in json.load(open(out, encoding="utf-8")) if "face" in r}
 
 
 def speaker(faces, fw=1.0):
@@ -70,7 +70,7 @@ def cutout(video, out, t=-1.0, n=12, cache=None):
                         os.path.join(fr, f"{i:03d}.jpg")])
     subprocess.run([_bin(cache or os.path.join(tmp, "bt")), fr, mk, "accurate", "1.5"],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-    meta = json.load(open(os.path.join(mk, "meta.json")))
+    meta = json.load(open(os.path.join(mk, "meta.json"), encoding="utf-8"))
     best = None
     _fw = Image.open(os.path.join(fr, meta[0]["f"])).size[0] if meta else 1.0
     spk = speaker({r["f"]: r["face"] for r in meta if "face" in r}, _fw)   # 6.0: وجه المتكلم بس — مو شخص ثاني بلقطة بي-رول
@@ -88,7 +88,7 @@ def cutout(video, out, t=-1.0, n=12, cache=None):
     al = np.asarray(m); rows, cols = np.where(al.max(1) > 40)[0], np.where(al.max(0) > 40)[0]
     rgba.crop((cols[0], rows[0], cols[-1] + 1, rows[-1] + 1)).save(out)
     fc = next(r["face"] for r in meta if r["f"] == f)   # مكان الوجه بالصورة المقصوصة — الثمبنيل يقص الراس والكتوف منه
-    json.dump({"x": fc["x"] - cols[0], "y": fc["y"] - rows[0], "w": fc["w"], "h": fc["h"]}, open(out + ".face.json", "w"))
+    json.dump({"x": fc["x"] - cols[0], "y": fc["y"] - rows[0], "w": fc["w"], "h": fc["h"]}, open(out + ".face.json", "w", encoding="utf-8"))
     shutil.rmtree(tmp, ignore_errors=True)
     return times[i]
 

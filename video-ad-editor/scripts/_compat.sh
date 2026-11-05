@@ -2,9 +2,10 @@
 # 1) بايثون: ويندوز فيه python بس، و python3 اختصار متجر مايكروسوفت (يفشل)
 # 2) المسارات: ويندوز يحتاج C:/… لأن بايثون ما يفهم /c/… حق قِت-باش
 # 3) UTF-8 إجباري عشان العربي ما ينكسر على cp1252
-_pick_py(){ for c in python3 python py; do
-    command -v "$c" >/dev/null 2>&1 && "$c" -c "import sys" >/dev/null 2>&1 && { echo "$c"; return 0; }
-  done; echo python3; }
+#    الترتيب python ← python3 ← py (نفس _find_chrome.js)، ونتخطّى python 2 (ماك قديم)
+_pick_py(){ for c in python python3 py; do
+    command -v "$c" >/dev/null 2>&1 && "$c" -c "import sys; sys.exit(sys.version_info < (3, 8))" >/dev/null 2>&1 && { echo "$c"; return 0; }
+  done; echo python; }
 PY="${PY:-$(_pick_py)}"
 export PYTHONUTF8=1 PYTHONIOENCODING=utf-8
 # مسار مطلق أصلي (C:/… على ويندوز، /… على ماك ولينكس)

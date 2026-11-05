@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """صفحة مراجعة الحلقة — ريلات + كاروسيل بصفحة وحدة: ملاحظة · اعتمد · تحميل (references/review-page.md)
-   python3 41_review.py review.json <مجلد_الصفحة>
+   python 41_review.py review.json <مجلد_الصفحة>
 
    review.json (المسارات نسبة لمكانه):
    { "key": "ep1",                       ← اسم ثابت للحلقة (لتخزين الطلبات بالجهاز)
@@ -14,6 +14,20 @@
 
    يطلّع بالمجلد: index.html + media/ (فيديو 1080×1920 تحت 14 ميقا = المعاينة والتحميل · بوستر · شرائح معاينة + أصلية للتحميل)
    ويطبع خريطة files لأداة النشر. الأصل الكامل ما ينلمس — هذي نسخة مراجعة."""
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import sys, os, json, re, subprocess, shutil
 
 CAP_MB = 14.0                     # حد ملف المنشور 15 ميقا — نخلي هامش

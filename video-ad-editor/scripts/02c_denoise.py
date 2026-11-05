@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """🎙️ تنظيف الصوت بالذكاء الاصطناعي على الجهاز — DeepFilterNet3 (30 سبتمبر، مأخوذة من فكرة Palmier).
 
-  python3 02c_denoise.py <work> [--strength 0.85] [--engine auto|dfn|ffmpeg]
+  python 02c_denoise.py <work> [--strength 0.85] [--engine auto|dfn|ffmpeg]
 
   • dfn    → برنامج deep-filter (DeepFilterNet3 مدمج فيه، بلا بايثون ولا torch) — ينزّله
              `00_setup.sh --extras` لمجلد bin/ بالسكل. يشيل مكيّف · مروحة · شارع · صدى خفيف.
@@ -10,6 +10,20 @@
 strength (0..1) = كم ديسيبل مسموح يشيل من الضجيج (حد التخفيف داخل الموديل نفسه — مو خلط بالأصل،
 الخلط يرجّع الضجيج كله). 1 = بلا حد (نظيف بالكامل بس ممكن يطلع «رقيق»)، 0.85 ≈ 43dB (الافتراضي)، 0.5 ≈ 30dB. الأصل يُحفظ src_rawaudio.mov — سوّها قبل التفريغ (الخطوة 4).
 """
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import os, shutil, subprocess, sys, tempfile
 
 SR = 48000                              # DeepFilterNet يشتغل على 48 كيلو بالضبط

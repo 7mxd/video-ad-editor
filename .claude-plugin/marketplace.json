@@ -1,15 +1,14 @@
 {
-  "name": "majed-video",
+  "name": "7mxd-plugins",
   "owner": {
-    "name": "Majed Alzaabi",
-    "url": "https://github.com/majedphotos"
+    "name": "7mxd"
   },
-  "description": "Arabic video editing plugin for Claude Code",
+  "description": "Claude Code plugins by 7mxd",
   "plugins": [
     {
-      "name": "majed-video",
+      "name": "video-ad-editor",
       "source": "./",
-      "description": "5 skills: reels from talking videos · 3D motion explainers · podcasts · beat-synced montage · covers & thumbnails"
+      "description": "Arabic video editing: 1 skill, 5 modes (reels, motion, podcast, montage, covers). Based on video-ad-editor by Majed Alzaabi"
     }
   ]
 }

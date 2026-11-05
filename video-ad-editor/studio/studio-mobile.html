@@ -78,6 +78,8 @@ label.sw{display:flex;align-items:center;justify-content:space-between;backgroun
 <video id="au" src="/cutz.mp4" playsinline preload="auto" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"></video>
 <input type="file" id="brFile" accept="video/*" style="display:none">
 <script>
+// 🔒 وضع --lan: الرمز من ?t= في الرابط يروح مع كل طلب /api
+(()=>{const t=new URLSearchParams(location.search).get('t'); if(!t)return; const f=window.fetch.bind(window); window.fetch=(u,o={})=>{if(String(u).startsWith('/api/')){o={...o,headers:{...(o.headers||{}),'X-Studio-Token':t}};} return f(u,o);};})();
 const $=s=>document.querySelector(s);
 const FPS=30; let ST=null, T=0, PX=60, playing=false, lastFrame=-1;
 const F=$('#frame'), AU=$('#au');

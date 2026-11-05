@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""خطة القص: يقيس السكتات بالصوت ويطلع مقاطع الكلام.  الاستخدام: python3 01_cut_plan.py <workdir>"""
+"""خطة القص: يقيس السكتات بالصوت ويطلع مقاطع الكلام.  الاستخدام: python 01_cut_plan.py <workdir>"""
 # ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
 import sys as _sys, builtins as _bi
 try:
@@ -9,7 +9,7 @@ except Exception:
     pass
 _real_open = _bi.open
 def _utf8_open(f, mode="r", *a, **k):
-    if "b" not in mode:
+    if "b" not in mode and len(a) < 2:
         k.setdefault("encoding", "utf-8")
     return _real_open(f, mode, *a, **k)
 _bi.open = _utf8_open

@@ -2,16 +2,16 @@
 """🪝 الهوك المكتوب لريلات البودكاست/المقابلة (v3.8.1) — كل ريل يبدأ بجملة هوك مكتوبة على الشاشة (1.5-3 ث) ثم يكمل المقطع.
 القواعد وصيغ الكتابة: references/podcast-hook.md
 
-  python3 22_hook.py suggest <work> [--words f.json]              ← يرتّب أقوى سطور المقطع (رقم/تناقض/سؤال/قصة) عشان تكتب منها الهوك
-  python3 22_hook.py check   <work> "<الهوك>" [...] [--words f.json] ← فاحص القواعد: 3-8 كلمات · أداة شد · لهجة كويتية · الرقم من كلامه · مو أول جملة
-  python3 22_hook.py apply   <work> "<الهوك>" [--dur 2.4] [--pos auto|top|mid|low] [--style bold|card] [--kicker "اسم برنامجك"]
+  python 22_hook.py suggest <work> [--words f.json]              ← يرتّب أقوى سطور المقطع (رقم/تناقض/سؤال/قصة) عشان تكتب منها الهوك
+  python 22_hook.py check   <work> "<الهوك>" [...] [--words f.json] ← فاحص القواعد: 3-8 كلمات · أداة شد · لهجة كويتية · الرقم من كلامه · مو أول جملة
+  python 22_hook.py apply   <work> "<الهوك>" [--dur 2.4] [--pos auto|top|mid|low] [--style bold|card] [--kicker "اسم برنامجك"]
                                                 [--em "10 دقايق"] [--keep-caps] [--force]
         ← يكتب theme.json ← hook + ينسخ hook-card.js للمجلد ويركّبه بـcompose.html (04/16 يركّبونه وحدهم لو ناقص)
-  python3 22_hook.py preview <work>                              ← 4 لقطات للهوك (بداية · 0.3 · آخره · بعده) بورقة وحدة hook_sheet.jpg
-  python3 22_hook.py off     <work>                              ← يشيل الهوك
-  python3 22_hook.py overlay <out> "<الهوك>" --theme theme.json --words reel.json [--video reel.mp4] [--pos mid] [...]
-        ← لريل **مو** من محرّكاتنا (خط المقابلة بدافنشي/لوتي، أو mp4 جاهز): طبقة شفافة hook.mov (ProRes 4444 بألفا — حطها
-          بأعلى تراك بدافنشي عند 0) ولو أعطيته --video يطلّع <اسم>_hook.mp4 محروق فوقه + hook_sheet.jpg
+  python 22_hook.py preview <work>                              ← 4 لقطات للهوك (بداية · 0.3 · آخره · بعده) بورقة وحدة hook_sheet.jpg
+  python 22_hook.py off     <work>                              ← يشيل الهوك
+  python 22_hook.py overlay <out> "<الهوك>" --theme theme.json --words reel.json [--video reel.mp4] [--pos mid] [...]
+        ← لريل **مو** من محرّكاتنا (خط المقابلة بمونتاج خارجي/لوتي، أو mp4 جاهز): طبقة شفافة hook.mov (ProRes 4444 بألفا — حطها
+          بأعلى تراك بالمونتاج الخارجي عند 0) ولو أعطيته --video يطلّع <اسم>_hook.mp4 محروق فوقه + hook_sheet.jpg
 
 <work> لازم يكون فيه caps.json أو a.json (أو --words ملف وِسبر/caps) — بدونها الفاحص ما يقدر يتأكد إن الأرقام من كلامه فيوقف
 (--no-words يتخطّى هالفحص عمداً).
@@ -23,12 +23,14 @@ try:
 except Exception: pass
 _real_open = _bi.open
 def _utf8_open(f, mode="r", *a, **k):
-    if "b" not in mode: k.setdefault("encoding", "utf-8")
+    if "b" not in mode and len(a) < 2: k.setdefault("encoding", "utf-8")
     return _real_open(f, mode, *a, **k)
 _bi.open = _utf8_open
 import json, os, re, sys, shutil, subprocess, argparse
 
 SC = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SC)
+from _chrome import find_chrome   # بحث كروم الموحّد
 HIND = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
 PUNCT = "…؟?!.,،:«»\"'*|"
 def norm(w):
@@ -143,7 +145,7 @@ def suggest(W):
     nums = sorted(nums_in(" ".join(s for _, s in S)))
     print(f"\nالأرقام اللي قالها (مسموح تستخدمها بس هذي): {', '.join(map(str, nums)) or 'ولا رقم'}")
     print("\nاكتب 3 هوكات بالصيغ (references/podcast-hook.md) — رقم + مفارقة · سؤال يحرج · فضول · أمر معاكس · قصة بنص جملة — ثم:\n"
-          f"  python3 {os.path.basename(__file__)} check {W} \"هوك 1\" \"هوك 2\" \"هوك 3\"")
+          f"  python {os.path.basename(__file__)} check {W} \"هوك 1\" \"هوك 2\" \"هوك 3\"")
 
 def inject(W):
     shutil.copy(os.path.join(SC, "hook-card.js"), os.path.join(W, "hook-card.js"))
@@ -184,7 +186,7 @@ def apply(W, a):
         q = [x for x in json.load(open(pj)).get("scenes", []) if x.get("m") == "QUOTE" and x["s"] < dur + 0.3]
         if q: print(f"  ⚠️ «السؤال الكبير» يبدأ {q[0]['s']:.1f}ث — تحت الهوك (ينطفي وقته، فكلماته الأولى تضيع). "
                     "أعد `15_podcast.py plan` — الحين يختار سؤالاً بعد الهوك")
-    print(f"  معاينة: python3 {os.path.basename(__file__)} preview {W}")
+    print(f"  معاينة: python {os.path.basename(__file__)} preview {W}")
     rj = "16_render_pod.js" if os.path.exists(os.path.join(W, "cams.json")) else "04_render_frames.js"
     print(f"  ريل مرسوم من قبل؟ ارسم نافذة الهوك بس: node {rj} {W} range 0 {dur + 0.5:.1f}  ثم التجميع كالعادة")
 
@@ -218,19 +220,18 @@ def preview(W):
     files = [os.path.join(W, "prev", (f"t{t:.2f}.jpg" if not cams else str(t).replace(".", "_") + ".jpg")) for t in ts]
     sheet(files, [f"{t:.2f}s" for t in ts], os.path.join(W, "hook_sheet.jpg"))
 
-# ── overlay: ريل مو من محرّكاتنا (خط المقابلة بدافنشي/لوتي · mp4 جاهز) ──
+# ── overlay: ريل مو من محرّكاتنا (خط المقابلة بمونتاج خارجي/لوتي · mp4 جاهز) ──
 OVERLAY_JS = r"""
 const [,, SC, OUT, CFGF, FPS] = process.argv; const fs=require('fs'), path=require('path'), {pathToFileURL}=require('url');
 const C=JSON.parse(fs.readFileSync(CFGF,'utf8'));
 function pupp(){ for(const p of [process.env.PUPPETEER_PATH,'puppeteer-core','puppeteer',path.join(process.cwd(),'node_modules/puppeteer-core'),path.join(SC,'..','node_modules','puppeteer-core'),path.join(SC,'..','..','node_modules','puppeteer-core')]){ if(!p) continue; try{return require(p);}catch(e){} } throw new Error('ما لقيت puppeteer-core — شغّل 00_setup.sh'); }
-function chrome(){ if(process.env.CHROME_PATH) return process.env.CHROME_PATH; const LA=process.env.LOCALAPPDATA||'', PF=process.env.ProgramFiles||'C:/Program Files', P86=process.env['ProgramFiles(x86)']||'C:/Program Files (x86)';
-  for(const c of ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',PF+'/Google/Chrome/Application/chrome.exe',P86+'/Google/Chrome/Application/chrome.exe',LA+'/Google/Chrome/Application/chrome.exe',PF+'/Microsoft/Edge/Application/msedge.exe','/usr/bin/google-chrome','/usr/bin/chromium']) if(fs.existsSync(c)) return c; throw new Error('ما لقيت كروم — حدّد CHROME_PATH'); }
+function chrome(){ return process.env.CHROME_PATH; }   /* 22_hook.py يمرّره من _chrome.find_chrome() */
 (async()=>{ const b=await pupp().launch({executablePath:chrome(),headless:'new',args:['--no-sandbox','--allow-file-access-from-files','--font-render-hinting=none','--force-color-profile=srgb']});
   const p=await b.newPage(); p.on('pageerror',e=>console.log('PAGEERR',e.message)); p.on('console',m=>{ if(m.type()==='error') console.log(m.text()); });
   await p.setViewport({width:1080,height:1920,deviceScaleFactor:1});
   const th=C.theme, font=th.font||'Cairo';
   let ff=''; if(th.fontFiles) ff='<style>'+th.fontFiles.map(f=>"@font-face{font-family:'"+font+"';src:url('"+pathToFileURL(f.src).href+"');font-weight:"+(f.weight||400)+"}").join('')+'</style>';
-  else ff='<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family='+encodeURIComponent(font)+':wght@400;700;800;900&display=swap">';
+  else ff='<style>'+require(path.join(SC,'_fonts.js')).fontCss(font,[400,700,800,900])+'</style>';   /* محلي من motion/fonts — قوقل للعائلة اللي مو بالحزمة بس */
   const html='<!doctype html><html dir="rtl"><head><meta charset="utf-8">'+ff+'<style>html,body{margin:0;background:transparent}</style></head><body><canvas id="cv" width="1080" height="1920"></canvas></body></html>';
   fs.writeFileSync(path.join(OUT,'.hook_overlay.html'),html);
   await p.goto(pathToFileURL(path.join(OUT,'.hook_overlay.html')).href,{waitUntil:'networkidle0'});
@@ -266,11 +267,12 @@ def overlay(OUT, a):
     fps = fps or 30
     json.dump({"theme": th, "hook": cfg}, open(os.path.join(OUT, ".hook_overlay.json"), "w"), ensure_ascii=False)
     jsf = os.path.join(OUT, ".hook_overlay.js"); open(jsf, "w").write(OVERLAY_JS)
-    subprocess.run(["node", jsf, SC, OUT, os.path.join(OUT, ".hook_overlay.json"), str(fps)], check=True)
+    subprocess.run(["node", jsf, SC, OUT, os.path.join(OUT, ".hook_overlay.json"), str(fps)], check=True,
+                   env=dict(os.environ, CHROME_PATH=find_chrome()))
     fr = os.path.join(OUT, "hook_frames", "%05d.png"); mov = os.path.join(OUT, "hook.mov")
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-framerate", f"{fps:g}", "-i", fr, "-c:v", "prores_ks", "-profile:v", "4444",
                     "-pix_fmt", "yuva444p10le", mov], check=True)
-    print(f"✓ {mov} — طبقة شفافة {cfg['dur']} ث بـ{fps:g} فريم: حطها بأعلى تراك بدافنشي عند 0، وأخّر أول كابشن لين {cfg['dur'] - 0.2:.1f}ث (نصّان مع بعض ما ينقرون)")
+    print(f"✓ {mov} — طبقة شفافة {cfg['dur']} ث بـ{fps:g} فريم: حطها بأعلى تراك بالمونتاج الخارجي عند 0، وأخّر أول كابشن لين {cfg['dur'] - 0.2:.1f}ث (نصّان مع بعض ما ينقرون)")
     if a.video:
         base = os.path.splitext(os.path.basename(a.video))[0]; outv = os.path.join(OUT, base + "_hook.mp4")
         fl = f"[1:v]scale={vw}:{vh},format=rgba[o];[0:v][o]overlay=0:0:eof_action=pass:format=auto,format=yuv420p[v]"

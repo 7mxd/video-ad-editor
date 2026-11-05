@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""قص السكتات + زوم مختلف لكل مقطع + تدرّج دافئ.  python3 03_cut_zoom.py <workdir>"""
+"""قص السكتات + زوم مختلف لكل مقطع + تدرّج دافئ.  python 03_cut_zoom.py <workdir>"""
 # ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
 import sys as _sys, builtins as _bi
 try:
@@ -9,12 +9,12 @@ except Exception:
     pass
 _real_open = _bi.open
 def _utf8_open(f, mode="r", *a, **k):
-    if "b" not in mode:
+    if "b" not in mode and len(a) < 2:
         k.setdefault("encoding", "utf-8")
     return _real_open(f, mode, *a, **k)
 _bi.open = _utf8_open
 # ──────────────────────────────────────────────────────────────────
-import json, subprocess, sys, os
+import json, subprocess, sys, os, shutil
 W=os.path.abspath(sys.argv[1]); SRC=os.path.join(W,"src.mov")
 _cj=json.load(open(os.path.join(W,"cut.json"))); k=_cj["keep"]; TAIL=float(_cj.get("tail",0) or 0)
 _tp=os.path.join(W,"theme.json")
@@ -108,6 +108,8 @@ def _hdr_to_sdr(src):
     except Exception: return src
     if ct not in ("arib-std-b67","smpte2084"): return src
     here=os.path.dirname(os.path.abspath(__file__)); binp=os.path.join(here,"hdr2sdr")
+    if not os.path.exists(binp) and not shutil.which("swiftc"):
+        print("⚠️ الفيديو HDR ومحوّل أبل يحتاج ماك + swiftc — أكمل بالأصل والألوان قد تختلف"); return src
     if not os.path.exists(binp):
         r=subprocess.run(["swiftc","-O","-o",binp,os.path.join(here,"hdr2sdr.swift")],capture_output=True)
         if r.returncode!=0: print("⚠️ الفيديو HDR وما قدرت أبني محوّل أبل (يحتاج أدوات Xcode) — الألوان قد تختلف"); return src

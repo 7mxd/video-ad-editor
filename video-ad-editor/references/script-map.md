@@ -4,7 +4,7 @@
 
 | | يسوي شنو | المحرّك |
 |---|---|---|
-| `00_setup.sh` | يفحص الأدوات وينزّل الناقص · `--update` للتحديث | مشترك |
+| `00_setup.sh` | يفحص الأدوات وينزّل الناقص · `--extras` للإضافات (ما فيه تحديث ذاتي) | مشترك |
 | `01_cut_plan.py` | يقيس السكتات ويطلع مقاطع الكلام | مشترك |
 | `02a_whisper_check.py` | 6.1: يفحص تفريغ وِسبر (تكرار مهلوس + كلام طاح) قبل التصحيح · `--fix` يعيد تفريغ النوافذ بقطع بلا سياق | مشترك |
 | `02_captions.py` | توقيت كل كلمة على التايم-لاين الجديد | مشترك |
@@ -12,7 +12,6 @@
 | `03_cut_zoom.py` | القص + زوم لكل مقطع + وسم bt709 + محوّل HDR | مشترك |
 | `_landscape.py` | يستدعيه 03 لحاله للفيديو العرضي: حدود اللقطات + الوجه → قصّ 9:16 لكل لقطة · `shots.json` (`references/landscape.md`) | مشترك (الوجه ماك) |
 | `04_render_frames.js` | يرسم الفريمات (استئناف + نافذة + معاينة) · يطبع أخطاء المشاهد بـ`[compose]` · بصمة التصميم: تغيّر أو `--force` = يمسح القديم أول | الخفيف |
-| `04b_remotion.sh` | يجهّز/يفتح/يرندر مشروع ريموشن (`references/remotion.md`) | ريموشن |
 | `05_sfx.py` | المؤثرات الصوتية من `sfx.json` | مشترك |
 | `06_encode.sh` | يجمّع الفريمات + الصوت · `FIT=1` بمرحلتين تحت `MAXMB` ميقا (6.1 — ريل بلا كفر) | الخفيف |
 | `06b_master.sh` | ‎-14 LUFS + ملف صوتي بالخلفية بخفض تلقائي | مشترك |
@@ -39,11 +38,12 @@
 | `28_cover.py` | كفر الريل = أول فريم بالفيديو: كل المهم داخل مربع 1:1 بالنص · صورة مقصوصة (`--photo`) أو أوضح فريم · شعارات ✕/✓ · `--first` يركّبه أول فريم → `cover.jpg` + `cover_grid.jpg` + `*-cover.mp4` | مشترك |
 | `33_thumb.py` | ثمبنيل يوتيوب 16:9 بثلاث أفكار (وجه كبير + هوك ≥120 بكسل + تحت يمين فاضي) → 3840×2160 و1280×720 + `thumbs_sheet.jpg` | الكفر |
 | `34_phone_preview.py` | معاينة الكفر/الثمبنيل بحجمه الحقيقي بالجوال (تبويب الريلز · البروفايل · من بعيد · يوتيوب) | الكفر |
+| `blur_track.py` | بلر خصوصية: يتتبّع هدف (`ref` صورة مرجع · `box` مربع) → `blur.json` · `apply` يبلّر · `qa` ورقة وحدة (`references/blur.md`) | مشترك (opencv) |
 | `40_capcut.py` | مونتاج داخل كاب كت: خطة من التفريغ ← موشن ProRes شفاف + مؤثرات ← يكتب مشروع كاب كت قابل للتعديل (`projects` · `skeleton` · `check` · `stills` · `render` · `sfx` · `write` · `all`) | كاب كت |
 | `41_review.py` + `review.TEMPLATE.html` | صفحة مراجعة الحلقة: كل الريلات والكاروسيل بصفحة وحدة (ملاحظة · اعتمد · تحميل) تنتشر خاصة على claude.ai — `references/review-page.md` | بودكاست |
 | `29_handtrack.py` + `handpose.swift` | تتبّع الكف (Vision) → `palm.js` منعّم: عنصر يمشي مع الإيد | مشترك (ماك) |
-| `36_facetrack.py` + `facetrack.swift` | تتبّع الوجه (Vision) → `face.js` منعّم: `MV.faceAt(t)` لحركات المعرض 85 و86 (`references/moves.md` 3د) | مشترك (ماك) |
-| `37_env.py` | علو صوته لكل فريم ← `env.js` (`window.ENV`): `MV.env(t)` لموجة/نبض يتحرك مع كلامه الحقيقي (`references/moves.md` 3و) | مشترك |
+| `36_facetrack.py` + `facetrack.swift` | تتبّع الوجه (Vision) → `face.js` منعّم: `MV.faceAt(t)` لحركات المعرض 85 و86 (`references/moves/clone-face.md`) | مشترك (ماك) |
+| `37_env.py` | علو صوته لكل فريم ← `env.js` (`window.ENV`): `MV.env(t)` لموجة/نبض يتحرك مع كلامه الحقيقي (`references/moves/depth.md`) | مشترك |
 | `22b_hook_center.py` | مركز زوم الهوك = وجهه → `theme.hookCenter` | الخفيف (ماك) |
 | `30_demo.js` | ديمو سينمائي: تسجيل شاشة/لقطات موقع داخل إطار جوال/متصفح + زوم على نقطة + ميلان 3D + علامة ضغط + عنوان | مشترك |
 | `31_device3d.js` + `motion/device3d.html` | آيفون/ماك بوك ثلاثي الأبعاد حقيقي (three.js، معدن وزجاج وظل) بنفس `demo.json` | مشترك |
@@ -54,8 +54,8 @@
 | `compose.EXAMPLES.js` | مشاهد المثال القديم للقراءة — **ما يتحمّل افتراضياً** | — |
 | `studio/studio.py` | الاستوديو — تايملاين باللمس فوق نفس الملفات والراسم (`references/studio.md`) | الخفيف |
 | `21_avatar_scene.py` | مشهد الأفاتار: صورة بمكان ثاني + يتكلم بصوته (`references/talking-avatar.md`) | fal |
-| `22_hook.py` + `hook-card.js` | 🪝 الهوك المكتوب أول كل ريل بودكاست/مقابلة: `suggest` أقوى السطور · `check` فاحص القواعد (3-8 كلمات، أداة شد، لهجة، الرقم من كلامه) · `apply` يكتب `theme.json ← hook` ويركّب الكرت · `preview` ورقة 4 لقطات · `overlay` طبقة شفافة `hook.mov` (أو محروقة فوق mp4) لريل مو من محرّكاتنا — خط المقابلة بدافنشي (`references/podcast-hook.md`) | مشترك |
-| `moves-compose.js` | 🎞️ يشغّل حركات المعرض (`motion/moves.js` → `FX`) داخل ريل الكلام: `MV` = أدوات النص والتوقيت (من `caps.json`) والثيم فوق كانفس compose · `MV.video` · `MV.panel` · `MV.hideCaption` · `MV.scene` · `MV.ready` (`references/moves.md` §3) | الخفيف |
+| `22_hook.py` + `hook-card.js` | 🪝 الهوك المكتوب أول كل ريل بودكاست/مقابلة: `suggest` أقوى السطور · `check` فاحص القواعد (3-8 كلمات، أداة شد، لهجة، الرقم من كلامه) · `apply` يكتب `theme.json ← hook` ويركّب الكرت · `preview` ورقة 4 لقطات · `overlay` طبقة شفافة `hook.mov` (أو محروقة فوق mp4) لريل مو من محرّكاتنا — خط المقابلة بمونتاج خارجي (`references/podcast-hook.md`) | مشترك |
+| `moves-compose.js` | 🎞️ يشغّل حركات المعرض (`motion/moves.js` → `FX`) داخل ريل الكلام: `MV` = أدوات النص والتوقيت (من `caps.json`) والثيم فوق كانفس compose · `MV.video` · `MV.panel` · `MV.hideCaption` · `MV.scene` · `MV.ready` (`references/moves/code.md`) | الخفيف |
 
 ## ملفات مجلد الشغل
 `src.mov` · `spec.json` (حلقة ← ريل) · `a.json` (وِسبر) · `fixes.json` · `cut.json` · `caps.json` · `theme.json` · `studio.json` · `sfx.json` · `behind.json` · `safe.json` (اختياري) · `hook-card.js` + `hook_sheet.jpg` (الهوك) · `vfr/` (فريمات المصدر) · `out/` (فريمات الرسم) · `prev/` (معاينة) · `ad-final.mp4` · `ad-master.mp4/.srt/.txt`.

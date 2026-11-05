@@ -1,17 +1,31 @@
 # -*- coding: utf-8 -*-
 """وضع المونتاج — مجموعة مقاطع بلا كلام → مونتاج واحد.
 
-  python3 12_montage.py <work> scan <مجلد_المقاطع> [--shot 1.5] [--fps 4]
-  python3 12_montage.py <work> show
-  python3 12_montage.py <work> sheet [out.jpg] [--cols 4]
-  python3 12_montage.py <work> drop 3 7      |  keep 1 2 5   |  undo
-  python3 12_montage.py <work> plan [--dur 30] [--shot 1.5] [--bpm 0] [--order energy|best|folder]
+  python 12_montage.py <work> scan <مجلد_المقاطع> [--shot 1.5] [--fps 4]
+  python 12_montage.py <work> show
+  python 12_montage.py <work> sheet [out.jpg] [--cols 4]
+  python 12_montage.py <work> drop 3 7      |  keep 1 2 5   |  undo
+  python 12_montage.py <work> plan [--dur 30] [--shot 1.5] [--bpm 0] [--order energy|best|folder]
                                    [--beats beats.json [--on beats|accents|onsets]]   ← القطع على نبضات الأغنية الفعلية (beat.py)
-  python3 12_montage.py <work> build [out.mp4] [--ar 9:16] [--xfade 0] [--amb 0] [--zoom 1]
+  python 12_montage.py <work> build [out.mp4] [--ar 9:16] [--xfade 0] [--amb 0] [--zoom 1]
 
 الاختيار على المشهد نفسه: وضوح الصورة · حركة بمقدار (لا جمود ولا رجّة) · إضاءة · لون.
 بلا تفريغ ولا كابشن — هذا وضع مستقل عن إعلان الكلام.
 """
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import json, os, re, subprocess, sys, shutil, math
 
 VID_EXT = (".mov", ".mp4", ".m4v", ".avi", ".mkv", ".webm", ".mts", ".m2ts")
@@ -438,7 +452,7 @@ def cmd_plan(W, args):
     cand, accs, FPSR = None, set(), 30
     if bj:
         if not os.path.exists(bj):
-            die("ما لقيت ملف النبضات: " + bj + " — شغّل: python3 scripts/beat.py <الأغنية>")
+            die("ما لقيت ملف النبضات: " + bj + " — شغّل: python scripts/beat.py <الأغنية>")
         B = json.load(open(bj))
         if on == "onsets":
             hs = sorted(h for _, h in B.get("onsets", [])) or [0]

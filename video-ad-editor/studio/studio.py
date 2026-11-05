@@ -1,19 +1,60 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""📱 استوديو الجوال/الويب — خادم صغير يفتح مجلد الشغل على الشبكة المحلية، وتعدّل من أي متصفح وتشوف النتيجة حيّة.
-   python3 studio/studio.py <work> [port]      ← يطبع الرابط
+"""📱 استوديو الجوال/الويب — خادم صغير يفتح مجلد الشغل، وتعدّل من أي متصفح وتشوف النتيجة حيّة.
+   python studio/studio.py <work> [port]         ← على هالجهاز بس (127.0.0.1)، بلا رمز
+   python studio/studio.py <work> [port] --lan   ← للجوال على نفس الواي فاي: يطبع رابط فيه ?t=<رمز>، وكل مسار يرفض بدونه
+     (أول طلب بالرمز يحط كوكي HttpOnly · SameSite=Strict عشان <video src> والملفات تشتغل · بلا قائمة مجلدات)
    الصفحة: /m · الحالة: GET /api/state · الحفظ: POST /api/save · الرسم: POST /api/render · التقدّم: GET /api/progress
    القص: POST /api/recut {keep} · حذف جمل: POST /api/drop {cards} · ورا الراس: POST /api/behind {cards}
    قصّ الشخص لمدى: POST /api/cutout {from,to} · بي-رول: POST /api/broll (الملف بالجسم + X-Name) · تعليقات: /api/comments · صفحة العميل: /share
    ما فيه محرّك جديد: نفس compose.html ونفس الراسم — الاستوديو يكتب studio.json وcaps.json وtheme.json وsfx.json بس."""
-import http.server, json, os, sys, subprocess, threading, socket, time, shutil, re, urllib.parse
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
+import http.server, http.cookies, json, os, sys, subprocess, threading, socket, time, shutil, re, urllib.parse, hmac, secrets, argparse
 
-W = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else '.')
-PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8792
+W = os.path.abspath('.')          # يتحدد من سطر الأوامر في main
+PORT = 8792
+TOKEN = None                      # None = محلي (127.0.0.1)؛ بوضع --lan رمز عشوائي
 HERE = os.path.dirname(os.path.abspath(__file__))           # مجلد الاستوديو (ملفاته)
 S = os.path.join(os.path.dirname(HERE), 'scripts')            # سكربتات السكل الأساسية — الاستوديو يستدعيها ولا يعدّلها
 PY = sys.executable
+sys.path.insert(0, S)
+from _shell import find_bash      # noqa: E402  ويندوز: Git Bash مو bash حق WSL
+COOKIE = 'studio_t'
 JOB = {"running": False, "kind": "", "log": "", "done": None, "err": None, "started": 0, "reload": False}
+
+def _cookie_token(headers):
+    try:
+        c = http.cookies.SimpleCookie(); c.load(headers.get('Cookie') or '')
+        return c[COOKIE].value if COOKIE in c else None
+    except http.cookies.CookieError:
+        return None
+
+def authorized(path, headers, query, token):
+    """محلي (token=None): كل شي مفتوح. --lan: كل مسار يحتاج الرمز (?t= أو X-Studio-Token أو الكوكي)."""
+    if token is None: return True
+    for given in (query.get('t'), headers.get('X-Studio-Token'), _cookie_token(headers)):
+        if isinstance(given, str) and hmac.compare_digest(given.encode(), token.encode()): return True
+    return False
+
+def local_origin_ok(headers, port):
+    """الوضع المحلي: POST من 127.0.0.1/localhost بس (يصد مواقع ثانية وDNS rebinding)."""
+    hosts = {f'127.0.0.1:{port}', f'localhost:{port}'}
+    if (headers.get('Host') or '').lower() not in hosts | {'127.0.0.1', 'localhost'}: return False
+    origin = headers.get('Origin')
+    return origin is None or origin.lower() in {f'http://{h}' for h in hosts}
 
 def P(*a): return os.path.join(W, *a)
 def rd(name, default=None):
@@ -27,7 +68,7 @@ def wr(name, obj):
 def log(s): JOB["log"] += s if s.endswith('\n') else s + '\n'
 def sh(cmd, check=True):
     log('$ ' + ' '.join(os.path.basename(c) if os.sep in str(c) else str(c) for c in cmd))
-    r = subprocess.run(cmd, capture_output=True, text=True, cwd=W)
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', errors='replace', cwd=W)
     out = (r.stdout or '') + (r.stderr or '')
     if out.strip(): log(out.strip()[-600:])
     if check and r.returncode: raise RuntimeError(' '.join(cmd[:2]) + ' فشل: ' + out.strip()[-300:])
@@ -134,7 +175,7 @@ def do_render(rng):
     if rng: cmd = ['node', os.path.join(S, '04_render_frames.js'), W, 'range', str(rng[0]), str(rng[1])]
     else:   cmd = ['node', os.path.join(S, '04_render_frames.js'), W, 'all', '--force']
     log('$ ' + os.path.basename(cmd[1]) + ' ' + ' '.join(cmd[3:]))
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
     for line in p.stdout:
         log(line)
         if 'فريم مرسوم من' in line: time.sleep(1.5); p.kill(); break
@@ -143,8 +184,8 @@ def do_render(rng):
     for f in ('ad-final.mp4', 'ad-master.mp4'):
         try: os.remove(P(f))
         except FileNotFoundError: pass
-    log("🎞️ تجميع…"); sh(['bash', os.path.join(S, '06_encode.sh'), W, P('ad-final.mp4')])
-    log("🔊 معايرة الصوت…"); sh(['bash', os.path.join(S, '06b_master.sh'), W, P('ad-final.mp4'), P('ad-master.mp4')])
+    log("🎞️ تجميع…"); sh([find_bash(), os.path.join(S, '06_encode.sh'), W, P('ad-final.mp4')])
+    log("🔊 معايرة الصوت…"); sh([find_bash(), os.path.join(S, '06b_master.sh'), W, P('ad-final.mp4'), P('ad-master.mp4')])
     if not os.path.exists(P('ad-master.mp4')): raise RuntimeError('ما طلع الملف النهائي')
     JOB["done"] = 'ad-master.mp4'
 
@@ -207,8 +248,27 @@ class H(http.server.SimpleHTTPRequestHandler):
     def _html(self, name):
         b = open(os.path.join(HERE, name), 'rb').read()
         self.send_response(200); self.send_header('Content-Type', 'text/html; charset=utf-8'); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
-    def end_headers(self): self.send_header('Cache-Control', 'no-store'); self.send_header('Accept-Ranges', 'bytes'); super().end_headers()
+    def end_headers(self):
+        self.send_header('Cache-Control', 'no-store'); self.send_header('Accept-Ranges', 'bytes')
+        if getattr(self, '_set_cookie', False):
+            self.send_header('Set-Cookie', f'{COOKIE}={TOKEN}; Path=/; HttpOnly; SameSite=Strict'); self._set_cookie = False
+        super().end_headers()
+    def list_directory(self, path):
+        if TOKEN is not None: self.send_error(404); return None   # --lan: بلا قائمة ملفات المجلد
+        return super().list_directory(path)
+    def _denied(self):
+        """True (وقد ردّ 403) لو الطلب مرفوض: --lan بلا الرمز، أو POST محلي من مصدر غريب"""
+        u = urllib.parse.urlsplit(self.path)
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()}
+        if TOKEN is None and self.command == 'POST' and not local_origin_ok(self.headers, PORT):
+            self._json(403, {"ok": False, "msg": "طلب من مصدر غريب — افتح الاستوديو من 127.0.0.1"}); return True
+        if authorized(u.path, self.headers, q, TOKEN):
+            t = q.get('t')
+            self._set_cookie = TOKEN is not None and isinstance(t, str) and hmac.compare_digest(t.encode(), TOKEN.encode())
+            return False
+        self._json(403, {"ok": False, "msg": "رمز الاستوديو ناقص أو غلط — افتح الرابط اللي فيه ?t="}); return True
     def do_GET(self):
+        if self._denied(): return
         p = self.path.split('?')[0]
         if p in ('/', '/m', '/m/'): return self._html('studio-mobile.html')
         if p == '/share': return self._html('studio-share.html')
@@ -240,6 +300,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 except (BrokenPipeError, ConnectionResetError): break
                 left -= len(chunk)
     def do_POST(self):
+        if self._denied(): return
         p = self.path.split('?')[0]; n = int(self.headers.get('Content-Length') or 0); raw = self.rfile.read(n)
         if p.startswith('/api/broll'):
             name = urllib.parse.unquote(self.headers.get('X-Name') or 'clip.mov')
@@ -269,8 +330,21 @@ def lan_ip():
     except Exception: return '127.0.0.1'
 
 if __name__ == '__main__':
+    ap = argparse.ArgumentParser(description='استوديو الجوال/الويب')
+    ap.add_argument('work', nargs='?', default='.')
+    ap.add_argument('port', nargs='?', type=int, default=8792)
+    ap.add_argument('--lan', action='store_true', help='افتحه على الشبكة المحلية (0.0.0.0) برمز في الرابط')
+    a = ap.parse_args()
+    W, PORT = os.path.abspath(a.work), a.port
     if not os.path.exists(P('compose.html')): sys.exit('❌ ما فيه compose.html بمجلد الشغل')
-    srv = http.server.ThreadingHTTPServer(('0.0.0.0', PORT), H)
-    print(f"📱 الاستوديو شغّال — بالجوال (نفس الواي فاي): http://{lan_ip()}:{PORT}/m   · بالجهاز: http://127.0.0.1:{PORT}/m   · للعميل: /share")
+    import _fonts; _fonts.copy_to(W)   # compose.html يطلب fonts.css والخطوط جنبه (بلا شبكة)
+    if a.lan:
+        TOKEN = secrets.token_urlsafe(16)
+        srv = http.server.ThreadingHTTPServer(('0.0.0.0', PORT), H)
+        print(f"📱 الاستوديو شغّال على الشبكة — بالجوال (نفس الواي فاي): http://{lan_ip()}:{PORT}/m?t={TOKEN}   · للعميل: http://{lan_ip()}:{PORT}/share?t={TOKEN}", flush=True)
+        print("   🔒 الرابط فيه رمز — لا تنشره إلا لمن تبيه يعدّل", flush=True)
+    else:
+        srv = http.server.ThreadingHTTPServer(('127.0.0.1', PORT), H)
+        print(f"📱 الاستوديو شغّال — بالجهاز: http://127.0.0.1:{PORT}/m   · للعميل: /share   (للجوال: أعد التشغيل بـ--lan)", flush=True)
     try: srv.serve_forever()
     except KeyboardInterrupt: pass

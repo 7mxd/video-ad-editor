@@ -12,7 +12,7 @@
 - `approve_label`: نص زر الاعتماد (الافتراضي «اعتمد»، أو من `theme.json ← review.approve_label`).
 
 ```bash
-python3 scripts/41_review.py <work>/review.json <work>/review     # ≈ 15 ث لكل ريل
+python scripts/41_review.py <work>/review.json <work>/review     # ≈ 15 ث لكل ريل
 ```
 يطلّع `<work>/review/index.html` + `media/` + `files.json`. الفيديو بالصفحة 1080×1920 تحت 14 ميقا (نفسه للمعاينة والتحميل) — الأصل الكامل ما ينلمس.
 

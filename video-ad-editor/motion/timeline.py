@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """timeline.py — يبني <proj>/timeline.json من project.json + vo/words.json، ويركّب vo/vo_full.wav.
 
-  python3 timeline.py <proj>
+  python timeline.py <proj>
 
 project.json (المفاتيح اللي يقراها):
   bpm, beatsPerBar (4), beatOffset (0), duration (اختياري — يفرض الطول)
@@ -15,6 +15,20 @@ project.json (المفاتيح اللي يقراها):
   scenes: [{ id, file, lines:[ids], minDur, duration (للمشهد بلا أسطر), transition:{type,dur,...} }]
   sections: [{ name:'intro'|'build'|'drop'|'break'|'outro'|..., at: ثواني | 'scene:id' | 'line:id' | 'beat:n' | 'bar:n' }]
 """
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import sys, os, json, math, wave
 import numpy as np
 

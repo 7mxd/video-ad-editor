@@ -26,12 +26,12 @@
 
 ## 1) خطوة أولى: فحص البيئة (`probe`)
 
-أضف سكربت `scripts/30_probe.sh` يطبع جدول القدرات، وما يفشل أبداً:
+اطبع جدول القدرات بهالأوامر (ما تفشل أبداً):
 
 ```bash
 echo "os: $(uname -s) cores: $(nproc 2>/dev/null || sysctl -n hw.ncpu) mem: $(free -m 2>/dev/null | awk '/Mem/{print $2"MB"}')"
-for c in ffmpeg python3 node chromium google-chrome swiftc; do command -v $c >/dev/null && echo "have: $c" || echo "missing: $c"; done
-python3 - <<'E'
+for c in ffmpeg python node chromium google-chrome swiftc; do command -v $c >/dev/null && echo "have: $c" || echo "missing: $c"; done
+python - <<'E'
 import importlib
 for m in ["faster_whisper","onnxruntime","cv2","numpy","mediapipe","whisper"]:
     try: importlib.import_module(m); print("py:",m,"ok")
@@ -171,7 +171,7 @@ puppeteer.launch({executablePath:CHROME_PATH, headless:'new',
 
 ### 4.1 قناع النموذج: MODNet (ONNX، أي جهاز)
 ```bash
-python3 - <<'E'
+python - <<'E'
 # حمّل modnet.onnx من HuggingFace (أي مرآة لـ MODNet photographic portrait matting)
 E
 ```

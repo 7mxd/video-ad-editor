@@ -4,8 +4,22 @@
 الحل: قطع ~20 ث تنقص عند السكتات، كل قطعة لحالها، ثم الفجوات (>7 ث) تنعاد بقطع 10 ث.
   ماك M1+ (أسرع ~8×، large-v3-turbo على كرت الشاشة):
     uv run --python 3.12 --with mlx-whisper --with numpy python 18_long_transcribe.py <فيديو> <مجلد>
-  غيره (أبطأ): python3 18_long_transcribe.py <فيديو> <مجلد>   (openai-whisper، موديل WHISPER_MODEL=turbo افتراضاً)
+  غيره (أبطأ): python 18_long_transcribe.py <فيديو> <مجلد>   (openai-whisper، موديل WHISPER_MODEL=turbo افتراضاً)
 يكتب <مجلد>/words.json ([{start,end,text,words:[{w,s,e}]}] بثواني الأصل) و<مجلد>/transcript.txt (دقيقة:ثانية + النص)."""
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import json, os, sys, subprocess, time, numpy as np
 src, out = sys.argv[1], sys.argv[2]; os.makedirs(out, exist_ok=True); SR = 16000
 raw = subprocess.run(["ffmpeg", "-v", "error", "-i", src, "-vn", "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"], capture_output=True).stdout

@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 """voice.py — صوت «شرح بالموشن»: سطر سطر بتوقيت كل كلمة.
 
-  python3 voice.py <proj>                     # edge-tts بالصوت المختار (project.json ← voice.name أو --voice) لكل سطر بـ<proj>/script.json
-  python3 voice.py <proj> --voice ar-KW-NouraNeural --rate +8% --pitch +0Hz
-  python3 voice.py <proj> --only l2,l3        # يعيد أسطر معيّنة بس (الباقي من الكاش)
-  python3 voice.py <proj> --force             # يتجاهل الكاش
-  python3 voice.py <proj> --align whisper     # توقيت الكلمات من وِسبر بدل حدود edge-tts
-  python3 voice.py <proj> --own voice.wav [--whisper-model small]
+  python voice.py <proj>                     # edge-tts بالصوت المختار (project.json ← voice.name أو --voice) لكل سطر بـ<proj>/script.json
+  python voice.py <proj> --voice ar-KW-NouraNeural --rate +8% --pitch +0Hz
+  python voice.py <proj> --only l2,l3        # يعيد أسطر معيّنة بس (الباقي من الكاش)
+  python voice.py <proj> --force             # يتجاهل الكاش
+  python voice.py <proj> --align whisper     # توقيت الكلمات من وِسبر بدل حدود edge-tts
+  python voice.py <proj> --own voice.wav [--whisper-model small]
                                               # صوت الشخص نفسه: وِسبر يوقّت الكلمات ويقسّمه على أسطر script.json
 
 script.json: [{"id":"l1","text":"...","rate":"+5%","pitch":"+0Hz","gap_after":0.2,"voice":"..."}]
@@ -15,6 +15,20 @@ script.json: [{"id":"l1","text":"...","rate":"+5%","pitch":"+0Hz","gap_after":0.
   words.json = {"voice":..., "source":..., "lines":[{"id","text","file","dur","words":[{"w","s","e"}],"gap_after","source","orig_start"?}]}
   أوقات الكلمات نسبةً لبداية ملف السطر (ثواني).
 """
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import sys, os, json, re, argparse, asyncio, hashlib, subprocess, tempfile, wave, difflib
 import numpy as np
 

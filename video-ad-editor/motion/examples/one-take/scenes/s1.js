@@ -10,7 +10,7 @@ const PHC = { x: PH.x + PH.w / 2, y: PH.y + PH.h / 2 };
 const LAP = { x: 120, y: 430, w: 840, h: 525 };          // شاشة اللابتوب
 const SPH = W / PH.w;                                     // زوم الجوال لين يملا الإطار
 const BLUR = [[0.95, 2.0], [4.35, 5.15], [9.2, 11.1], [13.0, 14.6]];
-const URL = 'majedphotos/majed-plugins';
+const URL = '7mxd/video-ad-editor';
 
 MOTION.scene({
   id: 's1', start: 0, end: 16,

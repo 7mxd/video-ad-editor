@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """🔎 دوّر لقطة بالمعنى داخل المقاطع — «قهوة تنصب»، «لقطة قريبة للمنتج» (30 سبتمبر، مأخوذة من فكرة Palmier).
 
-  python3 26_find_shots.py <work> index <مجلد_أو_ملفات…> [--every 1.0]
-  python3 26_find_shots.py <work> find "a close-up of coffee being poured" [--top 8] [--sheet]
-  python3 26_find_shots.py <work> find --like صورة.jpg [--top 8] [--sheet]
-  python3 26_find_shots.py <work> where "…"      ← نفس find بس يطبع أرقام مقاطع المونتاج (montage.json)
+  python 26_find_shots.py <work> index <مجلد_أو_ملفات…> [--every 1.0]
+  python 26_find_shots.py <work> find "a close-up of coffee being poured" [--top 8] [--sheet]
+  python 26_find_shots.py <work> find --like صورة.jpg [--top 8] [--sheet]
+  python 26_find_shots.py <work> where "…"      ← نفس find بس يطبع أرقام مقاطع المونتاج (montage.json)
 
 موديل SigLIP2 من قوقل يشتغل على الجهاز (بلا إنترنت بعد أول تنزيل ~1.5 قيقا، بلا رصيد):
   يحوّل كل لقطة ووصفك لنفس «المعنى» ويقارن. **اكتب الوصف مثل تعليق صورة بالإنقليزي**
@@ -13,6 +13,20 @@
 الفهرس يُحفظ <work>/shots/ ويتحدّث بس للملفات الجديدة أو المتغيّرة.
 يحتاج: torch (موجود مع وِسبر) + transformers — `00_setup.sh --extras` ينزّلها.
 """
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import json, os, subprocess, sys
 
 VID_EXT = (".mov", ".mp4", ".m4v", ".avi", ".mkv", ".webm", ".mts", ".m2ts")

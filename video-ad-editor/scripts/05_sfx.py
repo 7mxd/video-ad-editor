@@ -7,7 +7,7 @@ except Exception:
     pass
 _real_open = _bi.open
 def _utf8_open(f, mode="r", *a, **k):
-    if "b" not in mode:
+    if "b" not in mode and len(a) < 2:
         k.setdefault("encoding", "utf-8")
     return _real_open(f, mode, *a, **k)
 _bi.open = _utf8_open

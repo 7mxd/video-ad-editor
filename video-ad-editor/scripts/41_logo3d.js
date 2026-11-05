@@ -9,8 +9,7 @@ const puppeteer = require('puppeteer-core');
 require('../motion/vendor.js')();
 const glArgs = require('./_chrome_flags.js');
 const fs = require('fs'), path = require('path'), http = require('http');
-const CHROME = process.env.CHROME || ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome'].find(p => fs.existsSync(p));
+const { findChrome } = require(path.join(__dirname, '_find_chrome.js'));   // بحث كروم الموحّد
 const W = path.resolve(process.argv[2] || ''), specPath = path.resolve(W, process.argv[3] || '');
 if (!fs.existsSync(specPath)) { console.log('الاستخدام: node 41_logo3d.js <work> <spec.json> [preview 0.5 2]'); process.exit(1); }
 const S = JSON.parse(fs.readFileSync(specPath, 'utf8')), SKILL = path.resolve(__dirname, '..');
@@ -30,7 +29,7 @@ const srv = http.createServer((req, res) => {
   await new Promise(r => srv.listen(0, '127.0.0.1', r)); const port = srv.address().port;
   const [OW, OH] = S.size || [1080, 1080];
   const CFG = Object.assign({}, S, { size: [OW, OH], tiles: (S.tiles || []).map(t => Object.assign({}, t, { img: t.img ? `http://127.0.0.1:${port}/work/${t.img}` : null })) });
-  const b = await puppeteer.launch({ executablePath: CHROME, headless: 'new', args: ['--no-sandbox', '--force-device-scale-factor=1', ...glArgs()] });
+  const b = await puppeteer.launch({ executablePath: findChrome(), headless: 'new', args: ['--no-sandbox', '--force-device-scale-factor=1', ...glArgs()] });
   const p = await b.newPage(); await p.setViewport({ width: OW, height: OH });
   p.on('pageerror', e => console.log('ERR', String(e).slice(0, 200)));
   await p.evaluateOnNewDocument(c => { window.CFG = c; }, CFG);

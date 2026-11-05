@@ -3,16 +3,16 @@
 """
 صفحة التعارف — أول شي يشوفه المستخدم الجديد (references/onboarding.md).
 
-  python3 scripts/00_onboard.py [serve] [--work DIR] [--port N] [--no-open] [--timeout SEC]
+  python scripts/00_onboard.py [serve] [--work DIR] [--port N] [--no-open] [--timeout SEC]
       يفتح الصفحة بالمتصفح، ينتظر لين يضغط «احفظ» أو «تخطّ»، يحفظ
       ~/.video-ad-editor/profile.json (+ DIR/profile.json لو انعطى --work) ويطبع الـJSON ويطلع.
       سطر «URL: …» ينطبع أول شي — لو المتصفح ما انفتح، عطه للمستخدم.
       الرمز: 0 = انحفظ · 2 = خلص الوقت بلا إرسال · 1 = خطأ.
-  python3 scripts/00_onboard.py show            يطبع الملف المحفوظ (أو {} لو ما فيه)
-  python3 scripts/00_onboard.py theme DIR [--force]
+  python scripts/00_onboard.py show            يطبع الملف المحفوظ (أو {} لو ما فيه)
+  python scripts/00_onboard.py theme DIR [--force]
       يكتب DIR/theme.json من الملف (ما يلمس ثيماً موجوداً إلا بـ--force) وينسخ الشعار.
-  python3 scripts/00_onboard.py onacc DIR       يحسب لون النص فوق التمييز ويكتبه theme.onAcc (بعد ما تكتب ألواناً بيدك)
-  python3 scripts/00_onboard.py path            يطبع مسار الملف
+  python scripts/00_onboard.py onacc DIR       يحسب لون النص فوق التمييز ويكتبه theme.onAcc (بعد ما تكتب ألواناً بيدك)
+  python scripts/00_onboard.py path            يطبع مسار الملف
 
   VAE_HOME=<مجلد> يغيّر مكان الحفظ (للتجربة) بدل ~/.video-ad-editor
   يشتغل على ماك وويندوز (python بدل python3 على ويندوز) — مكتبات بايثون القياسية بس.

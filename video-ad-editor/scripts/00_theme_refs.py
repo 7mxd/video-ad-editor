@@ -1,10 +1,24 @@
 # -*- coding: utf-8 -*-
 """ثيم من صور مرجعية (بنترست · لقطات شاشة · صور تصوّرها) → <work>/theme.json
-   python3 00_theme_refs.py <work> صورة1 [صورة2 …] [--force] [--light|--dark]
+   python 00_theme_refs.py <work> صورة1 [صورة2 …] [--force] [--light|--dark]
    - يجمع ألوان كل الصور، يختار خلفية ونص وتمييز بتباين مقروء (4.5+ للنص، 3+ للتمييز)،
      ويرسم <work>/refs_palette.jpg (الصور + الألوان المختارة) — اقرأها بعينك قبل ما تكمّل.
    - ما يلمس theme.json موجود إلا بـ--force (قاعدة: لا تغيّر ثيم سابق بلا طلبه).
-   - الألوان بس من الصور؛ الخط وستايل الكابشن قرارك أنت من شكل الصور (شوف SKILL.md الخطوة 1)."""
+   - الألوان بس من الصور؛ الخط وستايل الكابشن قرارك أنت من شكل الصور (شوف references/identity.md «صور مرجعية»)."""
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import sys, os, json, colorsys
 import numpy as np
 from PIL import Image, ImageDraw

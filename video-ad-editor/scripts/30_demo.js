@@ -18,8 +18,8 @@
 // القواعد: النسبة الأصلية مقدّسة (contain داخل الإطار)، الزوم يدخل ويطلع بنعومة 0.45 ث، والإيقاع من الكلام.
 const puppeteer = require('puppeteer-core');
 const fs = require('fs'), path = require('path'), { spawn, execFileSync } = require('child_process');
-const CHROME = process.env.CHROME || ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium', '/usr/bin/google-chrome'].find(p => fs.existsSync(p));
+const { findChrome } = require(path.join(__dirname, '_find_chrome.js'));   // بحث كروم الموحّد
+const { fontCss } = require(path.join(__dirname, '_fonts.js'));             // الخطوط من motion/fonts — بلا شبكة
 const cfgPath = path.resolve(process.argv[2] || ''); if (!fs.existsSync(cfgPath)) { console.log('الاستخدام: node 30_demo.js demo.json [preview 1 3 5]'); process.exit(1); }
 const D = JSON.parse(fs.readFileSync(cfgPath, 'utf8')), BASE = path.dirname(cfgPath);
 const mode = process.argv[3] === 'preview' ? 'preview' : 'all', times = process.argv.slice(4).map(Number);
@@ -74,7 +74,7 @@ function cam(t) {
 }
 
 const PAGE = `<!doctype html><html dir="rtl"><head><meta charset="utf-8"><style>
-@import url('https://fonts.googleapis.com/css2?family=${FONT.replace(/ /g, '+')}:wght@700;900&display=swap');
+${fontCss(FONT, [700, 900])}
 *{margin:0;box-sizing:border-box}html,body{width:${OW}px;height:${OH}px;overflow:hidden}
 body{background:${Array.isArray(BG) ? `radial-gradient(120% 90% at 80% 10%, ${BG[1]} 0%, ${BG[0]} 62%)` : BG};font-family:'${FONT}',sans-serif}
 #stage{position:absolute;inset:0;perspective:2200px}
@@ -145,7 +145,7 @@ function tapAt(t) { for (const p of D.taps || []) { const d = t - p.t; if (d >= 
 function titleAt(t) { for (const q of D.title || []) if (t >= q.s && t <= q.e) { const o = Math.min(1, (t - q.s) / .3, (q.e - t) / .3); return { text: q.text, o }; } return null; }
 
 (async () => {
-  const b = await puppeteer.launch({ executablePath: CHROME, headless: 'new', args: ['--no-sandbox', '--allow-file-access-from-files', '--force-device-scale-factor=1'] });
+  const b = await puppeteer.launch({ executablePath: findChrome(), headless: 'new', args: ['--no-sandbox', '--allow-file-access-from-files', '--force-device-scale-factor=1'] });
   const p = await b.newPage(); await p.setViewport({ width: OW, height: OH });
   await p.goto('file://' + path.join(WORK, 'page.html'), { waitUntil: 'networkidle0' }); await p.evaluate(() => document.fonts.ready);
   const step = async t => { await p.evaluate(s => window.setFrame(s), 'file://' + frameAt(t)); await p.evaluate((c, tp, ti) => window.pose(c, tp, ti), cam(t), tapAt(t), titleAt(t)); };

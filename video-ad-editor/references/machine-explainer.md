@@ -6,7 +6,7 @@
 
 المثال الشغّال: `motion/examples/machine/` (استشوار + مايكرويف، 14.6 ث). **ابدأ دايماً بنسخه:**
 ```bash
-cp -R "${CLAUDE_SKILL_DIR}/../video-ad-editor/motion/examples/machine" <مجلد الشغل>/<اسم>
+cp -R "${CLAUDE_SKILL_DIR}/motion/examples/machine" <مجلد الشغل>/<اسم>
 ```
 بعد النسخ: شيل مجلد `renders/` لو انتسخ (لقطات المثال القديمة تختلط بورقة المعاينة)، وشيل مشهد الجهاز اللي ما تبيه من `project.json`.
 

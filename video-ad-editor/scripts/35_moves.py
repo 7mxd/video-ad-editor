@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-معرض الحركات — المستخدم يشوف الحركات المرقّمة (motion/moves) ويختار: «أبي» أو «لا» (references/moves.md).
+معرض الحركات — المستخدم يشوف الحركات المرقّمة (motion/moves) ويختار: «أبي» أو «لا» (references/moves/INDEX.md).
 
-  python3 scripts/35_moves.py [serve] [--port N] [--no-open] [--timeout SEC]
+  python scripts/35_moves.py [serve] [--port N] [--no-open] [--timeout SEC]
       يفتح صفحة المعرض، ينتظر «احفظ»، يكتب الاختيار بـ~/.video-ad-editor/profile.json تحت "moves"
       (ما يلمس باقي الملف) ويطبعه. سطر «URL: …» ينطبع أول شي — لو المتصفح ما انفتح عطه للمستخدم.
       الرمز: 0 = انحفظ · 2 = خلص الوقت بلا حفظ · 1 = خطأ.
-  python3 scripts/35_moves.py show             يطبع الاختيار: {"on":[…], "off":[…]} بالـid + الأرقام
-  python3 scripts/35_moves.py set "3 7 12" [--off "5"]
+  python scripts/35_moves.py show             يطبع الاختيار: {"on":[…], "off":[…]} بالـid + الأرقام
+  python scripts/35_moves.py set "3 7 12" [--off "5"]
       يحفظ اختياراً من الشات مباشرة (أرقام المعرض) — لما يرد المستخدم «أبي 3 و7، 5 لا» بدل الصفحة.
-  python3 scripts/35_moves.py list             يطبع الكتالوج (رقم · id · الاسم · الحالة)
-  python3 scripts/35_moves.py plan --title "عنوان الفيديو" [--family calm|punch|onetake|editorial|auto] [--cues number,list,price,cta,contrast,emphasis,reveal,tech,hit] [--style auto|none|<id>|<a>+<b>] [--dry]
+  python scripts/35_moves.py list             يطبع الكتالوج (رقم · id · الاسم · الحالة)
+  python scripts/35_moves.py plan --title "عنوان الفيديو" [--family calm|punch|onetake|editorial|auto] [--cues number,list,price,cta,contrast,emphasis,reveal,tech,hit] [--style auto|none|<id>|<a>+<b>] [--dry]
       لوحة حركات الفيديو: 3 حركات أساسية (كلمات + انتقال + كاميرا/كرت) من عائلة وحدة يدور حولها الفيديو كله،
       + لهجات (accents) للحظات الخاصة حسب cues، + القواعد اللي تمشي دايماً. يتجنب أساسيات آخر 3 فيديوهات و"off".
       ينحفظ بسجل moves-history.json (إلا مع --dry) عشان الفيديو الجاي يطلع غير.

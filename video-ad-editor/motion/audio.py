@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """audio.py — صوت «شرح بالموشن»: خلفية صوتية مركّبة على الإيقاع + مؤثرات + الصوت + معايرة ‎-14 LUFS + دمج بالفيديو.
 
-  python3 audio.py <proj>            → renders/final.mp4        (صوت + خلفية + مؤثرات)
-  python3 audio.py <proj> --no-bed   → renders/final-nobed.mp4  (صوت + مؤثرات بس)
+  python audio.py <proj>            → renders/final.mp4        (صوت + خلفية + مؤثرات)
+  python audio.py <proj> --no-bed   → renders/final-nobed.mp4  (صوت + مؤثرات بس)
   خيارات: --video <mp4> (افتراضي renders/video.mp4) · --lufs (افتراضي ‎-14، وصوتك الحقيقي ‎-20) · --tp -1.5 · --seed 7 · --audition (يطلع كل مؤثر بملف لحاله)
 
 كل شي مركّب رياضياً (numpy/scipy) — بلا عينات خارجية = بلا حقوق.
@@ -19,6 +19,20 @@ project.json → music: { key:'A', scale:'minor'|'major'|'dorian', progression:[
    المرساة: riser و reverse-whoosh ينتهون عند at · whoosh و swoosh-pass ذروتهم عند at · الباقي يبدأ عند at
    لو sfx.json مو موجود: swoosh-pass تلقائي عند كل انتقال مشهد.
 """
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import sys, os, json, math, wave, re, argparse, subprocess
 import numpy as np
 from scipy import signal

@@ -728,7 +728,7 @@ function makeCtx(sc) {
     images: S.images, img: name => S.images[name],
     // motion-kit (2D) — globals X/BG/INK/ACC/FONT are set before every draw
     get MK() { return G.MK; },
-    // moves.js — مكتبة حركات المعرض المرقّم: ctx.FX.<اسم>(ctx, t, o) (references/moves.md)
+    // moves.js — مكتبة حركات المعرض المرقّم: ctx.FX.<اسم>(ctx, t, o) (references/moves/code.md)
     get FX() { return G.FX; },
     // styles.js — ctx.S = ستايل المشروع (null لو ما فيه) · ctx.STYLES للدمج/التبديل داخل مشهد
     get S() { return S.ST; }, get STYLES() { return G.STYLES; },

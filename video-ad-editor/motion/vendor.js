@@ -4,7 +4,8 @@ const fs = require('fs'), path = require('path'), { spawnSync } = require('child
 module.exports = function ensureVendor() {
   const dir = __dirname, mark = path.join(dir, 'vendor/three/build/three.module.js'), zip = path.join(dir, 'vendor.zip');
   if (fs.existsSync(mark) || !fs.existsSync(zip)) return;
-  for (const [cmd, args] of [['python3', ['-m', 'zipfile', '-e', zip, dir]], ['python', ['-m', 'zipfile', '-e', zip, dir]], ['tar', ['-xf', zip, '-C', dir]]]) {
+  const { pickPython } = require(path.join(dir, '..', 'scripts', '_find_chrome.js'));
+  for (const [cmd, args] of [[pickPython(), ['-m', 'zipfile', '-e', zip, dir]], ['tar', ['-xf', zip, '-C', dir]]]) {
     if (spawnSync(cmd, args, { stdio: 'ignore' }).status === 0 && fs.existsSync(mark)) return;
   }
   throw new Error('ما قدرت أفك motion/vendor.zip — فكّه يدوياً بنفس المجلد');

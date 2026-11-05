@@ -162,9 +162,9 @@ Working example of 2b + motion blur + the wall: `motion/examples/stage-wall/` (1
 ## 6. Commands
 ```bash
 cd video-ad-editor/motion
-python3 voice.py <proj>                      # TTS per line (cache: only changed lines regenerate)
-python3 voice.py <proj> --own me.wav         # your own recording: the whole take is kept (lines tile it, cut at the quietest point), long pauses ≥0.45s → 0.30s (--keep-silence keeps them). Then set timing {keepOriginal:true, snap:'none'}
-python3 timeline.py <proj>                   # beat-snapped timeline + vo/vo_full.wav
+python voice.py <proj>                      # TTS per line (cache: only changed lines regenerate)
+python voice.py <proj> --own me.wav         # your own recording: the whole take is kept (lines tile it, cut at the quietest point), long pauses ≥0.45s → 0.30s (--keep-silence keeps them). Then set timing {keepOriginal:true, snap:'none'}
+python timeline.py <proj>                   # beat-snapped timeline + vo/vo_full.wav
 node render.js <proj> preview 0.5 1.2 2.8 --safe       # stills + contact.png (look at them!)
 node render.js <proj> serve                  # live scrub/play player in your browser (preview only)
 node render.js <proj> all --scale 0.5        # fast draft → renders/video_s0.5.mp4
@@ -172,8 +172,8 @@ node render.js <proj> all                    # final frames (resume) → renders
 node render.js <proj> all --fresh            # after editing scenes (resume would keep stale frames)
 node render.js <proj> range 4 6              # re-render seconds 4..6 only (delete those frames first, or use --fresh)
 node render.js <proj> bench                  # cost split: CPU submit vs GPU+readback+JPEG
-python3 audio.py <proj> [--no-bed]           # bed + sfx + VO → -14 LUFS / TP ≤ -1.5 → renders/final.mp4
-python3 audio.py <proj> --audition           # every sfx as its own wav in renders/audio/
+python audio.py <proj> [--no-bed]           # bed + sfx + VO → -14 LUFS / TP ≤ -1.5 → renders/final.mp4
+python audio.py <proj> --audition           # every sfx as its own wav in renders/audio/
 ```
 
 ## 7. Performance on an M1 Pro (demo, 1080×1920)

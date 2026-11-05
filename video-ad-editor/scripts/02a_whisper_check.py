@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """فحص تفريغ وِسبر قبل الكابشن — تكرار مهلوس + كلام طاح.  (6.1 — ريل «1000$ بيوم»)
-  python3 02a_whisper_check.py <work>         ← يفحص a.json على a.wav: يخرج 0 نظيف · 3 فيه مشكلة (يطبع النوافذ)
-  python3 02a_whisper_check.py <work> --fix   ← يعيد تفريغ النوافذ المشكوكة بقطع ≤ 25 ث بلا سياق (condition_on_previous_text=False)
+  python 02a_whisper_check.py <work>         ← يفحص a.json على a.wav: يخرج 0 نظيف · 3 فيه مشكلة (يطبع النوافذ)
+  python 02a_whisper_check.py <work> --fix   ← يعيد تفريغ النوافذ المشكوكة بقطع ≤ 25 ث بلا سياق (condition_on_previous_text=False)
                                                  ويدمجها بـa.json (الأصل يبقى a_orig.json)، ثم يعيد الفحص
 الدرس: medium على ريل 124 ث طلّع «اشترك في القناة» ×15 بآخر 26 ث (الكلام الحقيقي ضاع)، وطيّح 4 ث بالنص (25.9→30.0) بلا أثر.
 وِسبر يكمّل على نصه السابق فالحلقة تجر نفسها — القطعة لحالها بلا سياق تنحل. (نفس درس 18_long_transcribe.py للحلقات.)
 يكشف: نفس الجملة 3 مرات ورا بعض · جمل الهلوسة المعروفة · كلمة ×4 ورا بعض · compression_ratio > 2.4 ·
        فجوة ≥ 1 ث (أو أول/آخر الملف) فيها كلام ≥ 0.6 ث بالصوت بلا تفريغ.
-يحتاج: ffmpeg + numpy (والإصلاح: openai-whisper — نفس الخطوة 4). WHISPER_MODEL يغيّر الموديل (الافتراضي medium)."""
+يحتاج: ffmpeg + numpy (والإصلاح: faster-whisper أو openai-whisper عبر transcribe.py — نفس الخطوة 4). WHISPER_MODEL يغيّر الموديل (الافتراضي medium)."""
 import sys as _sys
 try:
     _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -73,13 +73,14 @@ if not win:
     print("✅ التفريغ نظيف — بلا تكرار ولا كلام طاح (%d جملة · %.1f ث)" % (len(segs), DUR)); sys.exit(0)
 print("وِسبر: %d نافذة مشكوك فيها" % len(win)); show(win)
 if not FIX:
-    print("صلّحها: python3 scripts/02a_whisper_check.py <work> --fix   (يعيد تفريغ النوافذ بس، والأصل يبقى a_orig.json)")
+    print("صلّحها: python scripts/02a_whisper_check.py <work> --fix   (يعيد تفريغ النوافذ بس، والأصل يبقى a_orig.json)")
     sys.exit(3)
 
-import whisper
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import transcribe   # نفس محرّك الخطوة 4: faster-whisper لو موجود وإلا openai-whisper
 MODEL = os.environ.get("WHISPER_MODEL", "medium")
 print("⏳ إعادة تفريغ %.0f ث بموديل %s (بلا سياق)…" % (sum(b - a for a, b, _ in win), MODEL), flush=True)
-m = whisper.load_model(MODEL)
+m = transcribe.load(MODEL)
 
 def quiet(lo, hi):                                         # أهدأ نقطة بين lo و hi
     i, j = max(0, int(lo * 100)), min(n, int(hi * 100))
@@ -95,8 +96,7 @@ for a, b, _ in win:
     cuts.append(b2)
     new = []
     for c0, c1 in zip(cuts, cuts[1:]):
-        r = m.transcribe(x[int(c0 * SR):int(c1 * SR)].copy(), language="ar", word_timestamps=True,
-                         condition_on_previous_text=False, fp16=False)
+        r = transcribe.run(m, x[int(c0 * SR):int(c1 * SR)].copy(), language="ar", condition_on_previous_text=False)
         for s in r["segments"]:
             if not s["text"].strip() or any(k in s["text"] for k in BAD): continue
             s["start"] = round(s["start"] + c0, 2); s["end"] = round(s["end"] + c0, 2)

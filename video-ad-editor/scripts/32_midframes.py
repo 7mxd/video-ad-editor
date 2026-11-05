@@ -1,13 +1,29 @@
 # -*- coding: utf-8 -*-
 """فحص قبل التصدير: لقطة من **نص كل مشهد** (مو 6 لقطات عشوائية) — يكشف الغلط قبل ما يشوفه المستخدم
-   python3 32_midframes.py <work> [--video ad-final.mp4]
+   python 32_midframes.py <work> [--video ad-final.mp4]
    - المشاهد من studio.json ← scenes (وإلا من بطاقات الكابشن caps.json — لقطة لكل جملة).
    - بلا --video: يرسم اللقطات بالمحرّك نفسه (04_render_frames.js preview) — ما يحتاج الرسم الكامل.
    - يطلع أوراق mid_1.jpg، mid_2.jpg… (6 لقطات بكل ورقة، عليها التوقيت) — اقرأها كلها وافحص بكل لقطة:
      نص مقصوص · عناصر فوق بعض · رقم أو اسم مو من facts.md · حواف القص (هالة حول الشخص) · ترتيب «ورا الشخص».
    - صلّح، ثم أعد التشغيل على المشاهد اللي تعدّلت بس، وبعدها صدّر."""
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import sys, os, json, subprocess
 SC = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SC)
+from _shell import find_bash
 if len(sys.argv) < 2: print(__doc__); sys.exit(1)
 W = os.path.abspath(sys.argv[1]); vid = sys.argv[sys.argv.index('--video') + 1] if '--video' in sys.argv else ''
 def jl(n, d):
@@ -26,5 +42,5 @@ else:
     subprocess.run(['node', os.path.join(SC, '04_render_frames.js'), W, 'preview'] + [str(t) for t in times], check=True)
 for i in range(0, len(times), 6):
     out = os.path.join(W, f'mid_{i // 6 + 1}.jpg')
-    subprocess.run(['bash', os.path.join(SC, '07_contact_sheet.sh'), W, out] + [str(t) for t in times[i:i + 6]], check=True, env=env)
+    subprocess.run([find_bash(), os.path.join(SC, '07_contact_sheet.sh'), W, out] + [str(t) for t in times[i:i + 6]], check=True, env=env)
     print('→', out)

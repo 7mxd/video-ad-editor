@@ -3,7 +3,7 @@
   <work>/spec.json : {"segments": [[بداية_أول_كلمة, بداية_آخر_كلمة], ...]}  بثواني الحلقة (من transcript.txt / words.json لـ18)
                      الهوك أول قطعة (من وسط الكلام عادي) · تثبيت يدوي بعد فحص اللحمة: [s, e, {"a": 486.70, "b": 940.70}]
   ماك M1+:  uv run --python 3.12 --with mlx-whisper --with numpy python 20_episode_cuts.py <work> <episode.mp4> <words.json>
-  غيره:     python3 20_episode_cuts.py <work> <episode.mp4> <words.json>      (openai-whisper، WHISPER_MODEL=turbo)
+  غيره:     python 20_episode_cuts.py <work> <episode.mp4> <words.json>      (openai-whisper، WHISPER_MODEL=turbo)
 يكتب:
   cut.json   — حدود كل قطعة على أهدأ نقطة بين الكلمة وجارتها (ما يدخل نص كلمة الجار — درس اللحمات)
   a.json     — تفريغ ثاني لكل قطعة لحالها (أدق من تفريغ الحلقة)، جمل قصيرة، وكل جملة عليها "seg" (رقم قطعتها)
@@ -16,7 +16,7 @@ try:
 except Exception: pass
 _real_open = _bi.open
 def _utf8_open(f, mode="r", *a, **k):
-    if "b" not in mode: k.setdefault("encoding", "utf-8")
+    if "b" not in mode and len(a) < 2: k.setdefault("encoding", "utf-8")
     return _real_open(f, mode, *a, **k)
 _bi.open = _utf8_open
 import json, os, sys, subprocess, numpy as np

@@ -19,7 +19,9 @@ function movesCopy(){ const h=fs.readFileSync(W+'compose.html','utf8');
   /* 74 آية بسكينة: الخط العثماني يتحمّل من مجلد الشغل (MV.needFont) */
   const QF=path.join(__dirname,'..','motion','fonts','AmiriQuran-Regular.ttf'); if(h.includes('ayahCalm')&&!fs.existsSync(W+'AmiriQuran-Regular.ttf')&&fs.existsSync(QF)){ fs.copyFileSync(QF,W+'AmiriQuran-Regular.ttf'); console.log('🎞️ نسخت خط Amiri Quran لمجلد الشغل'); }
   /* 🎨 بنك الستايلات: MV.useStyle يحمّل خطوط الستايل من مجلد الشغل */
-  if(h.includes('useStyle')){ const FD=path.join(__dirname,'..','motion','fonts'); for(const f of fs.readdirSync(FD).filter(f=>/\.ttf$/.test(f)&&!/Quran/.test(f))) if(!fs.existsSync(W+f)) fs.copyFileSync(path.join(FD,f),W+f); } }
+  if(h.includes('useStyle')){ const FD=path.join(__dirname,'..','motion','fonts'); for(const f of fs.readdirSync(FD).filter(f=>/\.ttf$/.test(f)&&!/Quran/.test(f))) if(!fs.existsSync(W+f)) fs.copyFileSync(path.join(FD,f),W+f); }
+  /* 🔤 الخطوط المحلية: compose.html يطلب fonts.css جنبه — ننسخه مع كل الخطوط دايماً (بلا شبكة وقت الرسم) */
+  const FD=path.join(__dirname,'..','motion','fonts'); for(const f of fs.readdirSync(FD).filter(f=>/\.(ttf|css)$/.test(f))){ const d=W+f, s=path.join(FD,f); if(!fs.existsSync(d)||fs.statSync(d).size!==fs.statSync(s).size) fs.copyFileSync(s,d); } }
 async function movesInject(p){ if(await p.evaluate(()=>!!(window.FX&&window.MV&&window.STYLES))) return;
   for(const f of ['styles.js','moves.js','moves-compose.js']){ const src=[W+f,MOVES_SRC[f]].find(x=>fs.existsSync(x)); if(src) await p.addScriptTag({path:src}); } }
 const SHOT=process.argv.includes('--shot');
@@ -52,22 +54,7 @@ function resolvePuppeteer(){
 /* ── كروم: يلقاه على ويندوز وماك ولينكس (مضاف) ── */
 const {pathToFileURL}=require('url');
 const fileURL=p=>pathToFileURL(p).href;
-function findChrome(){
-  if(process.env.CHROME_PATH) return process.env.CHROME_PATH;
-  const LA=process.env.LOCALAPPDATA||'';
-  const PF=process.env.ProgramFiles||'C:/Program Files';
-  const P86=process.env['ProgramFiles(x86)']||'C:/Program Files (x86)';
-  const cands=[
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    PF+'/Google/Chrome/Application/chrome.exe',
-    P86+'/Google/Chrome/Application/chrome.exe',
-    LA+'/Google/Chrome/Application/chrome.exe',
-    PF+'/Microsoft/Edge/Application/msedge.exe',
-    P86+'/Microsoft/Edge/Application/msedge.exe',
-    '/usr/bin/google-chrome','/usr/bin/chromium','/usr/bin/chromium-browser'];
-  for(const c of cands){ try{ if(c && fs.existsSync(c)) return c; }catch(e){} }
-  throw new Error('ما لقيت كروم — حدّد CHROME_PATH');
-}
+const {findChrome}=require(path.join(__dirname,'_find_chrome.js'));
 const CHROME=findChrome();
 /* بكسلان مصمتان (أحمر وأخضر) يحلّان محل صورة الفيديو.
    نرسم كل لحظة مرتين: البكسل اللي يتغيّر بينهما = مكان الفيديو، واللي يثبت = رسمك أنت.
@@ -86,7 +73,6 @@ const FLAT_B='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2
     console.log(hookOK?`✅ أول كابشن عند ${hook.toFixed(2)} ثانية`
       :`❌ أول كابشن عند ${hook.toFixed(2)} ثانية — لازم قبل ${SAFE.hook_max}`);
     console.log('ℹ️  ما فيه compose.html — فحص البكسل للمحرّك الخفيف بس.');
-    console.log('   بريموشن: خلّ "guides": true بـsafe.json ثم 04b_remotion.sh <work> studio — تشوف المناطق الحمراء حيّة.');
     process.exit(hookOK?0:3);
   }
 

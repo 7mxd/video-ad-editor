@@ -13,10 +13,10 @@
 
 ### الأوامر
 ```bash
-python3 scripts/26_find_shots.py <work> index <مجلد_أو_ملفات…> [--every 1.0]   # لقطة كل ثانية
-python3 scripts/26_find_shots.py <work> find "a close-up of a camera lens" --top 8 --sheet
-python3 scripts/26_find_shots.py <work> find --like ref.jpg --sheet
-python3 scripts/26_find_shots.py <work> where "…"     # مع أرقام مقاطع المونتاج (montage.json)
+python scripts/26_find_shots.py <work> index <مجلد_أو_ملفات…> [--every 1.0]   # لقطة كل ثانية
+python scripts/26_find_shots.py <work> find "a close-up of a camera lens" --top 8 --sheet
+python scripts/26_find_shots.py <work> find --like ref.jpg --sheet
+python scripts/26_find_shots.py <work> where "…"     # مع أرقام مقاطع المونتاج (montage.json)
 ```
 - الفهرس بـ`<work>/shots/` ويتحدّث بس للملفات الجديدة.
 - النتائج: `مقطع @ من→إلى` (اللقطات المتلاصقة تنضم) + `shots/hits.json`، و`--sheet` ورقة وحدة `shots/hits.jpg` بنفس الترتيب — **اقرأها وحدة** وتأكد بعينك قبل ما تستخدم النتيجة.

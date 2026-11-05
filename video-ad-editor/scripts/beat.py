@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """🥁 كاشف الإيقاع — يطلع السرعة (BPM) ومواقع النبضات والضربات القوية من أي ملف صوت أو فيديو.
 
-  python3 beat.py <ملف_صوت_أو_فيديو> [--out beats.json]
+  python beat.py <ملف_صوت_أو_فيديو> [--out beats.json]
         [--bpm 120]        سرعة يدوية (لو الكشف طلع نص أو ضعف السرعة الصحيحة)
         [--offset 0.00]    يزيح كل الأوقات (ثوانٍ؛ سالب = أبكر). لو الأغنية تبدأ بعد أول الفيديو بـ1.2 ث حط 1.2
         [--start 0 --end 0] نافذة من الملف (الأوقات بالمخرَج تبدأ من --start = صفر)
@@ -21,6 +21,20 @@
 
 بلا librosa: numpy + scipy بس (نفس خوارزمية تتبّع النبضة بالبرمجة الديناميكية — Ellis 2007).
 """
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import json, os, subprocess, sys
 import numpy as np
 

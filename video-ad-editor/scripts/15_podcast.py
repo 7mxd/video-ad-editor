@@ -1,22 +1,25 @@
 # -*- coding: utf-8 -*-
 """وضع البودكاست — كاميرتان أو أكثر لنفس الجلسة → ريل 9:16 واحد.
-   python3 15_podcast.py prep <work> <مجلد_الكاميرات | ملف1 ملف2 …>   ← مزامنة · فحص عطب · وجوه وفم · من يتكلم · تفريغ · فريمات
-   python3 15_podcast.py make <work>                   ← كابشن · خطة مشاهد · قصّ الراس · رسم · تجميع · معايرة · ورقة
-   python3 15_podcast.py plan <work>                   ← إعادة الخطة فقط (بعد تعديل النص أو الثيم)
+   python 15_podcast.py prep <work> <مجلد_الكاميرات | ملف1 ملف2 …>   ← مزامنة · فحص عطب · وجوه وفم · من يتكلم · تفريغ · فريمات
+   python 15_podcast.py make <work>                   ← كابشن · خطة مشاهد · قصّ الراس · رسم · تجميع · معايرة · ورقة
+   python 15_podcast.py plan <work>                   ← إعادة الخطة فقط (بعد تعديل النص أو الثيم)
    بين prep و make: اكتب fixes.json (تصحيح التفريغ) — أو خلّه يمشي بالنص كما هو.
-   ماك فقط (Vision للوجوه وقصّ الشخص)."""
+   الوجوه: Vision بالماك، وإلا OpenCV بديل (_faces.py). «الراس برّا الكرت» (قصّ الشخص) ماك فقط."""
 import sys as _sys, builtins as _bi
 try:
     _sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True); _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 except Exception: pass
 _real_open=_bi.open
 def _u(f,mode="r",*a,**k):
-    if "b" not in mode: k.setdefault("encoding","utf-8")
+    if "b" not in mode and len(a) < 2: k.setdefault("encoding","utf-8")
     return _real_open(f,mode,*a,**k)
 _bi.open=_u
 import json, os, sys, subprocess, glob, shutil, math, statistics, wave, struct
 import numpy as np
 SC=os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0,SC)
+from _faces import tracker_cmd, write_empty, have_swiftc
+from _shell import find_bash
 PY=sys.executable
 FPS=30; LOFPS=10; LOW=270; LOH=480
 VID_EXT=('.mp4','.mov','.m4v','.mkv','.MP4','.MOV')
@@ -76,9 +79,9 @@ def prep(W,args):
     sh(["ffmpeg","-v","error","-y","-ss",f"{start-best['offset']:.3f}","-t",f"{total:.3f}","-i",best["file"],"-vn","-c:a","aac","-b:a","192k","-ar","48000",os.path.join(W,"master.m4a")])
     # 3) فريمات منخفضة (10/ث) لكل كاميرا + فحص العطب + الوجوه
     ft=os.path.join(W,"bt","facetrack"); os.makedirs(os.path.dirname(ft),exist_ok=True)
-    if not os.path.exists(ft):
-        r=sh(["swiftc","-O","-o",ft,os.path.join(SC,"facetrack.swift")])
-        if r.returncode!=0: sys.exit("❌ راصد الوجه يحتاج أدوات Xcode: xcode-select --install")
+    fkind,ftc=tracker_cmd(ft)   # ماك: Vision (ما تغيّر) · غيره: OpenCV بديل · ولا واحد: بلا تتبّع (قصّ من النص)
+    if fkind=="opencv": print("⚠️ تتبّع الوجه: OpenCV بديل (ما فيه swiftc/Vision) — أقل دقة من الماك")
+    elif not fkind: print("⚠️ ما فيه راصد وجه (Vision يحتاج ماك · OpenCV: 00_setup.sh --extras) — بقصّ من النص بلا تتبّع")
     procs=[]
     for c in cams:
         lo=os.path.join(W,"lo",f"cam{c['id']}"); os.makedirs(lo,exist_ok=True)
@@ -92,7 +95,9 @@ def prep(W,args):
     for c in cams:
         lo=os.path.join(W,"lo",f"cam{c['id']}")
         c["defects"]=defects(lo,total)
-        r=sh([ft,lo,os.path.join(W,"bt",f"face{c['id']}.json")])
+        fj=os.path.join(W,"bt",f"face{c['id']}.json")
+        if ftc: sh(ftc+[lo,fj])
+        else: write_empty(lo,fj)
         c["faces"]=face_stats(os.path.join(W,"bt",f"face{c['id']}.json"),c)
     # 4) من يتكلم — حركة الفم (والطاقة لو لكل كاميرا مايكها)
     speak=speaker_timeline(W,[c for c in cams if c["faces"]["ok"]] or cams,start,total,same_audio)
@@ -286,6 +291,7 @@ def plan(W):
             if quote and any(u["i"]==quote["i"] for u in blk): continue
             score=sum(3*u["num"]+u["hot"] for u in blk)/max(1.0,d/5)
             if score>0: cands.append((score,s_,e_,[u["i"] for u in blk]))
+    if not have_swiftc(): cands=[]   # «الراس برّا الكرت» يحتاج قصّ الشخص (Vision بالماك) — بدونه مشاهد عادية
     cands.sort(key=lambda c:-c[0]); heads=[]; budget=0.35*total
     for sc_,s_,e_,ids_ in cands:
         if any(not (e_+8<=h["s"] or s_>=h["e"]+8) for h in heads): continue
@@ -399,7 +405,8 @@ def make(W):
     P=plan(W)
     # 3) قصّ الشخص لمشاهد «الراس برّا الكرت»
     pm=os.path.join(W,"bt","personmask")
-    if not os.path.exists(pm): subprocess.run(["swiftc","-O","-o",pm,os.path.join(SC,"personmask.swift")],capture_output=True)
+    if not os.path.exists(pm) and have_swiftc(): subprocess.run(["swiftc","-O","-o",pm,os.path.join(SC,"personmask.swift")],capture_output=True)
+    if any(s["m"]=="HEAD" for s in P["scenes"]) and not os.path.exists(pm): sys.exit("⛔ «الراس برّا الكرت» يحتاج ماك + swiftc — شغّل plan من جديد على هالجهاز")
     hb={}; cams=json.load(open(os.path.join(W,"cams.json")))["cams"]
     for sc in [s for s in P["scenes"] if s["m"]=="HEAD"]:
         cam=sc["cam"]; f0=int(sc["s"]*FPS)+1; f1=int(sc["e"]*FPS)+1
@@ -434,11 +441,11 @@ def make(W):
     sh(["ffmpeg","-v","error","-y","-framerate","30","-i",os.path.join(W,"out","%05d.jpg"),"-i",os.path.join(W,"master.m4a"),"-map","0:v","-map","1:a",
         "-af","apad","-t",f"{dur:.3f}","-c:v","libx264","-preset","medium","-crf","19","-pix_fmt","yuv420p","-colorspace","bt709","-color_primaries","bt709","-color_trc","bt709",
         "-c:a","aac","-b:a","192k","-movflags","+faststart",os.path.join(W,"pod-final.mp4")],quiet=False)
-    m=subprocess.run(["bash",os.path.join(SC,"06b_master.sh"),W,os.path.join(W,"pod-final.mp4"),os.path.join(W,"pod-master.mp4")],capture_output=True,text=True)
+    m=subprocess.run([find_bash(),os.path.join(SC,"06b_master.sh"),W,os.path.join(W,"pod-final.mp4"),os.path.join(W,"pod-master.mp4")],capture_output=True,text=True)
     lufs=[l for l in m.stdout.splitlines() if "LUFS" in l]
     subprocess.run([PY,os.path.join(SC,"09_srt.py"),W,"pod-master"],capture_output=True)
     ts=[round(dur*k,1) for k in (0.05,0.25,0.45,0.6,0.78,0.95)]
-    subprocess.run(["bash",os.path.join(SC,"07_contact_sheet.sh"),W,os.path.join(W,"sheet.jpg")]+[str(t) for t in ts],capture_output=True,env={**os.environ,"SRC":os.path.join(W,"pod-master.mp4")})
+    subprocess.run([find_bash(),os.path.join(SC,"07_contact_sheet.sh"),W,os.path.join(W,"sheet.jpg")]+[str(t) for t in ts],capture_output=True,env={**os.environ,"SRC":os.path.join(W,"pod-master.mp4")})
     sz=os.path.getsize(os.path.join(W,"pod-master.mp4"))/1e6
     print(f"✅ pod-master.mp4 — {dur:.1f}ث · {sz:.1f} ميقا · {len(P['scenes'])} مشهد · "+(lufs[-1].strip() if lufs else "")+" · الورقة: sheet.jpg")
 

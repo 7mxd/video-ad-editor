@@ -1,9 +1,10 @@
 <!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="fonts.css">
 <style>html,body{margin:0;background:#000}canvas{display:block}</style></head><body>
 <canvas id="cv" width="1080" height="1920"></canvas>
 <img id="LOGO" src="logo.png"><img id="VF"><img id="PRS"><img id="CVR">
 <script>
+const LOCAL_FONT=f=>[...document.fonts].some(x=>x.family.replace(/["']/g,'')===f);   /* بالحزمة (fonts.css) = محلي بلا شبكة */
 const C=document.getElementById('cv'),X=C.getContext('2d');
 const LOGO=document.getElementById('LOGO'), VF=document.getElementById('VF');
 const W=1080,H=1920;
@@ -56,7 +57,7 @@ function init(d){
   if(typeof t.hookZoom==='number') HOOK_END=t.hookZoom;
   if(t.outro){ OUTRO_T={...OUTRO_T,...t.outro}; if(Array.isArray(t.outro.chips)) RECAP=t.outro.chips.map(c=>[c]); }   /* v3.5: كرت الختام من الثيم (الافتراضي إعلان السكل — ريل بودكاست لازم يغيّره) */   /* زوم الهوك + انتقال بعده (ثواني) — شوف hookZoom تحت */
   if(t.logo){const L=document.getElementById('LOGO'); if(L.getAttribute('src')!==t.logo) L.src=t.logo;}
-  if(FONT!=='Cairo'){const l=document.createElement('link');l.rel='stylesheet';
+  if(!LOCAL_FONT(FONT)){const l=document.createElement('link');l.rel='stylesheet';
     l.href='https://fonts.googleapis.com/css2?family='+encodeURIComponent(FONT)+':wght@400;600;700;800;900&display=swap';
     document.head.appendChild(l);}
   if(d.studio){ const st=d.studio;
@@ -620,7 +621,8 @@ function preloadStack(){
     im.onload=()=>{ l._um=im; r(); }; im.onerror=()=>{ console.error('⚠️ طبقات: ما انقرى '+l.umask+' — الجملة بترجع للنمط العادي'); r(); };
     im.src=l.umask; }));
   if(ls.length&&STK.font&&STK.font!==FONT){   /* خط خاص للطبقات (اختياري) — ننتظره عشان أول فريم ما يطلع بخط بديل */
-    ps.push(new Promise(r=>{ const k=document.createElement('link'); k.rel='stylesheet';
+    if(LOCAL_FONT(STK.font)) ps.push(document.fonts.load(STK.weight+' 100px "'+STK.font+'"','عربي ـ 123').catch(()=>{}));   /* بالحزمة: محلي */
+    else ps.push(new Promise(r=>{ const k=document.createElement('link'); k.rel='stylesheet';
       k.href='https://fonts.googleapis.com/css2?family='+encodeURIComponent(STK.font)+(STK.weight&&STK.weight!=400?':wght@'+STK.weight:'')+'&display=swap';
       k.onload=()=>document.fonts.load(STK.weight+' 100px "'+STK.font+'"','عربي ـ 123').then(r,r);   /* نص عربي إلزامي — بدونه ينزل الجزء اللاتيني بس */ k.onerror=()=>{ console.error('⚠️ طبقات: خط '+STK.font+' ما تحمّل'); r(); };
       setTimeout(r,8000); document.head.appendChild(k); }));
@@ -1127,7 +1129,7 @@ window.setFrame=src=>{ /* decode() بعد إسناد المصدر = ضمان إ�
   VF.src=src; return (VF.decode?VF.decode():Promise.resolve()).catch(()=>{}); };
 window.shot=q=>document.getElementById('cv').toDataURL('image/jpeg',q);
 </script>
-<!-- 🎞️ معرض الحركات (references/moves.md §3): FX.<id>(MV, t, o) داخل مشاهدك — FX من motion/moves.js، وMV (أدوات النص والتوقيت والثيم) من moves-compose.js.
+<!-- 🎞️ معرض الحركات (references/moves/code.md): FX.<id>(MV, t, o) داخل مشاهدك — FX من motion/moves.js، وMV (أدوات النص والتوقيت والثيم) من moves-compose.js.
      04_render_frames.js و08_safe_check.js ينسخونهم للمجلد لو ناقصين. مشاهدك تحتهم (بعد هالسطر). -->
 <script src="styles.js"></script><script src="moves.js"></script><script src="moves-compose.js"></script>
 </body></html>

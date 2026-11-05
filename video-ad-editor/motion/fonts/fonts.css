@@ -1,0 +1,16 @@
+/* مولّد من scripts/_fonts.py — لا تعدّله يدوي (python scripts/_fonts.py) */
+@font-face{font-family:'Cairo';font-style:normal;font-weight:200 1000;src:url('Cairo-VF.ttf')}
+@font-face{font-family:'Tajawal';font-style:normal;font-weight:400;src:url('Tajawal-Regular.ttf')}
+@font-face{font-family:'Tajawal';font-style:normal;font-weight:700;src:url('Tajawal-Bold.ttf')}
+@font-face{font-family:'Tajawal';font-style:normal;font-weight:800;src:url('Tajawal-ExtraBold.ttf')}
+@font-face{font-family:'Tajawal';font-style:normal;font-weight:900;src:url('Tajawal-Black.ttf')}
+@font-face{font-family:'IBM Plex Sans Arabic';font-style:normal;font-weight:400;src:url('IBMPlexSansArabic-Regular.ttf')}
+@font-face{font-family:'IBM Plex Sans Arabic';font-style:normal;font-weight:600;src:url('IBMPlexSansArabic-SemiBold.ttf')}
+@font-face{font-family:'IBM Plex Sans Arabic';font-style:normal;font-weight:700;src:url('IBMPlexSansArabic-Bold.ttf')}
+@font-face{font-family:'Readex Pro';font-style:normal;font-weight:160 700;src:url('ReadexPro-VF.ttf')}
+@font-face{font-family:'Noto Kufi Arabic';font-style:normal;font-weight:100 900;src:url('NotoKufiArabic-VF.ttf')}
+@font-face{font-family:'Lalezar';font-style:normal;font-weight:400;src:url('Lalezar-Regular.ttf')}
+@font-face{font-family:'Aref Ruqaa';font-style:normal;font-weight:400;src:url('ArefRuqaa-Regular.ttf')}
+@font-face{font-family:'Aref Ruqaa';font-style:normal;font-weight:700;src:url('ArefRuqaa-Bold.ttf')}
+@font-face{font-family:'Amiri Quran';font-style:normal;font-weight:400;src:url('AmiriQuran-Regular.ttf')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;src:url('Inter-VF.ttf')}

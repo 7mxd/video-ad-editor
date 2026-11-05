@@ -347,7 +347,7 @@
     G.init = function (d) { const r = orig.apply(this, arguments); inited = true; READY.splice(0).forEach(f => { try { f(); } catch (e) { console.error('⚠️ MV.ready: ' + e.message); } }); return r; };
     G.init.__mv = true;
   }
-  /* 🎨 بنك الستايلات (references/styles.md): MV.useStyle('paperCut') أو 'explainer+keynote' — مرة وحدة فوق مشاهدك.
+  /* 🎨 بنك الستايلات (references/styles-bank.md): MV.useStyle('paperCut') أو 'explainer+keynote' — مرة وحدة فوق مشاهدك.
      يرجّع S (= MV.S): S.background/card/label/post/sig… وألوان MV.P وخطوط display/body/num تصير من الستايل. useStyle(null) يرجع لثيم compose. */
   function useStyle(spec) {
     if (!spec) { STY = null; return null; }

@@ -13,7 +13,7 @@ const fs = require('fs'), path = require('path'), http = require('http'), { spaw
 require('./vendor.js')();
 const ROOT = path.resolve(__dirname, '..');                        // video-ad-editor (serves /motion, /scripts)
 const LOGOS = path.resolve(__dirname, '../../hook-assets/logos');
-const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const { findChrome } = require(path.join(__dirname, '..', 'scripts', '_find_chrome.js'));   // بحث كروم الموحّد (وقت الرسم بس — serve ما يحتاجه)
 let puppeteer; try { puppeteer = require('puppeteer-core'); } catch (e) { puppeteer = require(path.resolve(__dirname, '../../node_modules/puppeteer-core')); }
 
 const argv = process.argv.slice(2);
@@ -75,7 +75,7 @@ function encode(frameDir, fps, out, startNumber = 0, count = null) {
   const srv = await serve(), port = srv.address().port;
   if (mode === 'serve') { console.log(`▶ افتح: http://127.0.0.1:${port}/motion/engine.html?proj=/proj/${SAFE ? '&safe=1' : ''}\n  (Ctrl+C للإيقاف)`); return; }
   const browser = await puppeteer.launch({
-    executablePath: CHROME, headless: true,
+    executablePath: findChrome(), headless: true,
     args: [...require('../scripts/_chrome_flags.js')(), '--enable-unsafe-webgpu', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', '--force-color-profile=srgb', '--hide-scrollbars', '--mute-audio', '--disable-features=CalculateNativeWinOcclusion'],
   });
   const R = path.join(PROJ, 'renders');

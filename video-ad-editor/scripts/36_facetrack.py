@@ -1,11 +1,25 @@
 # -*- coding: utf-8 -*-
 """تتبّع الوجه لحركات المعرض (85 فقاعة كلام · 86 كاميرا ثانية) — ماك فقط (Vision، ببلاش)
-   python3 36_facetrack.py <work> <من_ثانية> <إلى_ثانية> [--sigma 5]
+   python 36_facetrack.py <work> <من_ثانية> <إلى_ثانية> [--sigma 5]
    - يقرا فريمات الفيديو المقصوص <work>/vfr/00001.jpg… ويشغّل facetrack.swift (نفس راصد البودكاست) على المدى بس.
    - يكتب <work>/face.js:  window.FACE={fps,from,to,sw,sh,pts:[[t,x,y,w,h],…]}  (نِسَب 0..1 من صورة vfr، منعّمة قاوسي σ=5 فريم، والفجوات مستوفاة)
    - بـcompose.html: <script src="face.js"></script> قبل مشاهدك، ثم مرّر face: MV.faceAt للحركة.
      MV.faceAt(t) يحوّلها لإحداثيات الكانفس بنفس تأطير MV.video ويرجّع {x,y,w,h,mx,my} (mx,my = الفم تقريباً) أو null برّا المدى.
    بلا face.js (مو ماك) الحركتين ترجع لمكان افتراضي."""
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import sys, os, json, subprocess, shutil, tempfile
 import numpy as np
 SC = os.path.dirname(os.path.abspath(__file__)); FPS = 30
@@ -20,6 +34,8 @@ def main():
     vfr = os.path.join(W, "vfr")
     if not os.path.isdir(vfr): sys.exit("❌ ما فيه vfr/ — شغّل الخطوة 6 (03_cut_zoom.py) أول")
     bt = os.path.join(W, "bt"); os.makedirs(bt, exist_ok=True); exe = os.path.join(bt, "facetrack")
+    if not os.path.exists(exe) and not shutil.which("swiftc"):
+        sys.exit("⛔ تتبّع الوجه للحركات يحتاج ماك + swiftc (Vision) — ما يشتغل على هالجهاز")
     if not os.path.exists(exe):
         r = subprocess.run(["swiftc", "-O", "-o", exe, os.path.join(SC, "facetrack.swift")], capture_output=True, text=True)
         if r.returncode: sys.exit("❌ يحتاج أدوات Xcode: xcode-select --install\n" + r.stderr[-400:])

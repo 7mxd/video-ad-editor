@@ -2,12 +2,26 @@
 """🎭 مشهد «أنت بمكان ثاني وتتكلم بصوتك» — صورة مولّدة + أفاتار كلينق يحرّك الشفايف على صوته الحقيقي.
    الوصفة الكاملة والأخطاء اللي لا تكررها: references/talking-avatar.md
 
-   python3 21_avatar_scene.py <work> still <ثانية_الفريم> "<وصف المكان والجلسة>" [صورة_مرجع_للتكوين ...]
+   python 21_avatar_scene.py <work> still <ثانية_الفريم> "<وصف المكان والجلسة>" [صورة_مرجع_للتكوين ...]
         → ai/avatar_still0.jpg و ai/avatar_still1.jpg (خيارين · 0.039$ للصورة) — اعرضهم عليه واختر
-   python3 21_avatar_scene.py <work> talk <من> <إلى> <الصورة_المختارة> [اسم=seat] [--yes]
+   python 21_avatar_scene.py <work> talk <من> <إلى> <الصورة_المختارة> [اسم=seat] [--yes]
         → يقص صوته من cutz.mp4 (نفس المدى) ويولّد الأفاتار (0.115$/ث) ويطلّع الفريمات clips/<اسم>_0001.jpg…
           بلا --yes يطبع التكلفة بس ولا يصرف.
 المزوّد fal.ai — المفتاح FAL_KEY بالبيئة أو .env (مجلد الشغل أو المشروع أو البيت)."""
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import sys, os, json, time, base64, subprocess, urllib.request, urllib.error
 
 IMG_EDIT = "fal-ai/nano-banana/edit"            # 0.039$ للصورة (صفحة fal، 28 سبتمبر 2026)

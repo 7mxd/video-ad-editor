@@ -1,13 +1,27 @@
 # -*- coding: utf-8 -*-
 """معاينة الكفر/الثمبنيل بحجمه الحقيقي على شاشة الجوال — قبل ما ينشر.
-   python3 34_phone_preview.py cover.jpg            ← كفر ريل 9:16: تبويب الريلز (9:16) + البروفايل (3:4) + من بعيد
-   python3 34_phone_preview.py thumb.jpg --youtube  ← ثمبنيل يوتيوب 16:9: الصفحة الرئيسية بالجوال + الجانبي الصغير + المدة
+   python 34_phone_preview.py cover.jpg            ← كفر ريل 9:16: تبويب الريلز (9:16) + البروفايل (3:4) + من بعيد
+   python 34_phone_preview.py thumb.jpg --youtube  ← ثمبنيل يوتيوب 16:9: الصفحة الرئيسية بالجوال + الجانبي الصغير + المدة
    يطلّع <الاسم>_phone.jpg — افتحه بحجمه (100٪) على شاشة ريتينا = نفس اللي يشوفه المتابع.
 
 المقاسات مقاسة من لقطة شاشة ماجد (آيفون 1320 بكسل عرض، 3 أضعاف — 3 أكتوبر 2026):
    مربّع تبويب الريلز 438×782 بكسل شاشة = 146 نقطة عرض ← كل بكسل بكفر 1080 = 0.135 نقطة.
    ⇒ نص 11 نقطة (أصغر خط مقروء بالآيفون) يحتاج ≈ 81 بكسل بالكفر. والعنوان المريح «من بعيد» ≈ 16-18 نقطة ≈ 120-135 بكسل.
 """
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import sys, os
 from PIL import Image, ImageDraw, ImageFilter
 

@@ -9,8 +9,7 @@
 // نوافذ الكوكيز والدردشة تنخفى بـCSS (ما نضغط «قبول» بالنيابة عن أحد).
 const puppeteer = require('puppeteer-core');
 const fs = require('fs'), path = require('path'), { spawn } = require('child_process');
-const CHROME = process.env.CHROME || ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  'C:/Program Files/Google/Chrome/Application/chrome.exe', '/usr/bin/chromium', '/usr/bin/google-chrome'].find(p => fs.existsSync(p));
+const { findChrome } = require(path.join(__dirname, '_find_chrome.js'));   // بحث كروم الموحّد
 const a = process.argv.slice(2);
 const url = a[0], OUT = path.resolve(a[1] || 'web');
 const opt = (n, d) => { const i = a.indexOf(n); return i >= 0 ? (a[i + 1] && !a[i + 1].startsWith('--') ? +a[i + 1] : true) : d; };
@@ -33,7 +32,7 @@ async function open(page, w, h, dpr, mobile) {
 
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
-  const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new', args: ['--no-sandbox', '--hide-scrollbars', '--lang=ar'] });
+  const browser = await puppeteer.launch({ executablePath: findChrome(), headless: 'new', args: ['--no-sandbox', '--hide-scrollbars', '--lang=ar'] });
   const page = await browser.newPage();
   await open(page, 393, 852, 3, true);
   const H = await page.evaluate(() => Math.min(document.documentElement.scrollHeight, 852 * 14));

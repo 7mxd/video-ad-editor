@@ -11,7 +11,7 @@
 
 ## 1) النبضات — `beat.py`
 ```bash
-python3 scripts/beat.py <الأغنية أو الفيديو> --out <work>/beats.json [--click]
+python scripts/beat.py <الأغنية أو الفيديو> --out <work>/beats.json [--click]
 ```
 يطبع السرعة والنبضات والضربات القوية. **`--click`** يطلع ملف فيه الأغنية + تكّة على كل نبضة (أعلى على
 الضربات القوية) — لو المستخدم قال «مو راكب»، سمّعه هذا أول.
@@ -74,9 +74,9 @@ numpy + scipy بس، بلا librosa — أغنية 3 دقايق بأقل من ث
 
 ## أ) مونتاج على النبضة (الأكثر استخداماً)
 ```bash
-python3 scripts/beat.py <work>/bg-audio.mp3 --out <work>/beats.json
-python3 scripts/12_montage.py <work> plan --dur 20 --shot 1.0 --beats <work>/beats.json   # [--on onsets|accents]
-python3 scripts/12_montage.py <work> build <work>/montage.mp4          # القطعات على فريم النبضة بالضبط
+python scripts/beat.py <work>/bg-audio.mp3 --out <work>/beats.json
+python scripts/12_montage.py <work> plan --dur 20 --shot 1.0 --beats <work>/beats.json   # [--on onsets|accents]
+python scripts/12_montage.py <work> build <work>/montage.mp4          # القطعات على فريم النبضة بالضبط
 node scripts/23_beatfx_render.js <work> <work>/montage.mp4 --audio <work>/bg-audio.mp3 --sheet
 ```
 - `--on beats` (الافتراضي) على النبضات · `accents` على الضربات القوية بس (أبطأ وأفخم) · `onsets` على أي ضربة
@@ -99,7 +99,7 @@ node scripts/23_beatfx_render.js <work> <work>/montage.mp4 --audio <work>/bg-aud
 الخلفية الصوتية (`bg-audio.mp3`) تبدأ من صفر بـ`06b_master.sh` **وتتكرر لين آخر الفيديو**، فنبضاتها = توقيت الفيديو
 النهائي (و`--loop` يكرر النبضات مع تكرار الملف).
 ```bash
-python3 scripts/beat.py <work>/bg-audio.mp3 --out <work>/beats.json
+python scripts/beat.py <work>/bg-audio.mp3 --out <work>/beats.json
 node scripts/23_beatfx_render.js <work> - --plan-only --style clean --density low --avoid 0:3.2 --loop
 cp scripts/beat-fx.js <work>/
 ```

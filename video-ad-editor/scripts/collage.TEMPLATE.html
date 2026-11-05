@@ -1,4 +1,5 @@
 <!doctype html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="fonts.css">
 <style>body{margin:0;background:#000}canvas{display:block}</style></head><body>
 <canvas id="c" width="1080" height="1920"></canvas>
 <script>
@@ -8,6 +9,7 @@
    قواعد المستخدم (٤ سبتمبر): بلا كابشن · النص فوق كل شي · ظهور المتحدث ≥3 ثوانٍ · العنصر يعيش ≥1.6 ثانية ·
    هامش 70 بكسل · لا نص برتقالي على كتلة برتقالية · لا شي ورا ظهر المتحدث · العناصر تدخل وتطلع من الكادر لا قطع.
    ============================================================ */
+const LOCAL_FONT=f=>[...document.fonts].some(x=>x.family.replace(/["']/g,'')===f);   /* بالحزمة (fonts.css) = محلي بلا شبكة */
 const CFG=window.CFG||{style:'collage',logos:{},assets:'collage-assets/'};
 const W=1080,H=1920,X=document.getElementById('c').getContext('2d');
 let TH={bg:'#F0EEE6',ink:'#1F1F1D',acc:'#D97757',clay:'#BD5D3A',mut:'#7A7A75',font:'Cairo',handle:''};
@@ -22,7 +24,8 @@ async function loadImg(n,src){return new Promise(r=>{const i=new Image();i.onloa
 window.ready=(async()=>{
   try{TH=Object.assign(TH,await (await fetch('theme.json')).json());}catch(e){}
   BG=TH.bg;INK=TH.ink;ACC=TH.acc;CLAY=TH.clay||TH.acc;MUT=TH.mut;FONT=TH.font||'Cairo';FF='"'+FONT+'","Cairo","Noto Kufi Arabic",sans-serif';
-  const l=document.createElement('link');l.rel='stylesheet';l.href='https://fonts.googleapis.com/css2?family='+encodeURIComponent(FONT)+':wght@700;900&family=Cairo:wght@700;900&display=swap';document.head.appendChild(l);
+  const gf=[...new Set([FONT,'Cairo'])].filter(f=>!LOCAL_FONT(f));   /* قوقل للعائلة اللي مو بالحزمة بس */
+  if(gf.length){const l=document.createElement('link');l.rel='stylesheet';l.href='https://fonts.googleapis.com/css2?'+gf.map(f=>'family='+encodeURIComponent(f)+':wght@700;900').join('&')+'&display=swap';document.head.appendChild(l);}
   const c=await (await fetch('caps.json')).json();CAPS=c.cards||c;TOTAL=c.total||(CAPS.length?CAPS[CAPS.length-1].e:0);
   await Promise.all([loadImg('bug',CFG.assets+'bug_note.jpg'),loadImg('mcc',CFG.assets+'mcc_bw.jpg'),loadImg('cards',CFG.assets+'cards_bw.jpg'),
     ...Object.entries(CFG.logos||{}).map(([n,u])=>loadImg('logo:'+n,u))]);

@@ -13,8 +13,7 @@ const faces={}; for(const c of cams.cams) faces[c.id]=c.faces;
 /* الخطوط المحلية والشعار → روابط ملفات */
 if(theme.fontFiles) theme.fontFiles=theme.fontFiles.map(f=>({...f,src:url(path.resolve(W,f.src))}));
 if(theme.logo) theme.logo=url(path.resolve(W,theme.logo));
-function findChrome(){ if(process.env.CHROME_PATH) return process.env.CHROME_PATH;
-  for(const c of ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome','/usr/bin/google-chrome','/usr/bin/chromium']) if(fs.existsSync(c)) return c; throw new Error('ما لقيت كروم — حدّد CHROME_PATH'); }
+const {findChrome}=require(path.join(__dirname,'_find_chrome.js'));
 function pupp(){ for(const p of [process.env.PUPPETEER_PATH,'puppeteer-core','puppeteer',path.join(process.cwd(),'node_modules/puppeteer-core'),SC+'../node_modules/puppeteer-core']){ if(!p) continue; try{return require(p);}catch(e){} } throw new Error('ما لقيت puppeteer-core'); }
 (async()=>{
   const puppeteer=pupp(); const mode=process.argv[3]||'all';

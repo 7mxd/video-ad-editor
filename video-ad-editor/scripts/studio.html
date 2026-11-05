@@ -1,5 +1,5 @@
 <!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="fonts.css">
 <style>
 html,body{margin:0;background:#141413;color:#F3EFEA;font-family:'Cairo',system-ui,sans-serif;height:100%;overflow:hidden}
 #stage{display:flex;height:100%}
@@ -27,6 +27,7 @@ const C=document.getElementById('cv'),X=C.getContext('2d');
 const LOGO=document.getElementById('LOGO'), VF=document.getElementById('VF');
 const W=1080,H=1920;
 let BG='#F3EFEA',INK='#1F1F1D',ACC='#D97757',CLAY='#BD5D3A',MUT='#8A847A',FONT='Cairo',HANDLE='@handle';
+const LOCAL_FONT=f=>[...document.fonts].some(x=>x.family.replace(/["']/g,'')===f);   /* بالحزمة (fonts.css) = محلي بلا شبكة */
 let CAPS=[],VEND=0,OUTRO=0,DUR=0;
 function init(d){
   CAPS=d.cards;VEND=d.total;OUTRO=d.outro;DUR=VEND+OUTRO;
@@ -36,7 +37,7 @@ function init(d){
   FONT=t.font||FONT; HANDLE=t.handle||HANDLE;
   ONACC=(typeof t.onAcc==='string'&&/^#[0-9A-Fa-f]{6}$/.test(t.onAcc))?t.onAcc:null;
   if(t.logo){const L=document.getElementById('LOGO'); if(L.getAttribute('src')!==t.logo) L.src=t.logo;}
-  if(FONT!=='Cairo'){const l=document.createElement('link');l.rel='stylesheet';
+  if(!LOCAL_FONT(FONT)){const l=document.createElement('link');l.rel='stylesheet';
     l.href='https://fonts.googleapis.com/css2?family='+encodeURIComponent(FONT)+':wght@400;600;700;800;900&display=swap';
     document.head.appendChild(l);}
 }

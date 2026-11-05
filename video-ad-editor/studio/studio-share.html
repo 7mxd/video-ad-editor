@@ -10,6 +10,8 @@ button{background:#D4AF37;color:#111;border:0;border-radius:10px;padding:10px 16
 <input id="who" placeholder="اسمك"><textarea id="txt" placeholder="تعليقك…"></textarea><button id="send">أرسل التعليق عند <span id="at">00:00</span></button>
 <div id="list"></div></div>
 <script>
+// 🔒 وضع --lan: الرمز من ?t= في الرابط يروح مع كل طلب /api
+(()=>{const t=new URLSearchParams(location.search).get('t'); if(!t)return; const f=window.fetch.bind(window); window.fetch=(u,o={})=>{if(String(u).startsWith('/api/')){o={...o,headers:{...(o.headers||{}),'X-Studio-Token':t}};} return f(u,o);};})();
 const $=s=>document.querySelector(s); const fmt=t=>{const m=Math.floor(t/60),s=Math.floor(t%60);return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');};
 async function load(){const st=await (await fetch('/api/state')).json(); $('#v').src='/'+(st.final||'cutz.mp4')+'?v='+Date.now(); list(st.comments||[]);}
 function list(cs){$('#list').innerHTML=cs.slice().reverse().map(c=>'<div class="cm"><b data-t="'+(c.t||0)+'">'+fmt(c.t||0)+'</b> · '+c.who+': '+c.text+'<div class="note">'+c.at+'</div></div>').join('');$('#list').querySelectorAll('b').forEach(b=>b.onclick=()=>{$('#v').currentTime=+b.dataset.t;$('#v').play();});}

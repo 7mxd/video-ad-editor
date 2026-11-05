@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""ثمبنيل يوتيوب 16:9 — ثلاث أفكار مختلفة يختار منها (قواعد references/thumbnails.md)
-   python3 33_thumb.py <work> "سطر أول|*كلمة مميزة*" [--photo me.png | --video src.mov [--t 3.2]] [--logo a.png] [--x old.png --ok new.png] [--bg "#F0EEE6"]
+"""ثمبنيل يوتيوب 16:9 — ثلاث أفكار مختلفة يختار منها (قواعد references/cover.md)
+   python 33_thumb.py <work> "سطر أول|*كلمة مميزة*" [--photo me.png | --video src.mov [--t 3.2]] [--logo a.png] [--x old.png --ok new.png] [--bg "#F0EEE6"]
    - الصورة: اسأل المستخدم «آخذ صورتك من الفيديو ولا عندك صور تعطيني؟»
      --photo: صورته مقصوصة (خلفية شفافة) · بدونها: يختار أحسن فريم من الفيديو ويقصّه (_cutout.py — ماك).
    - الخلفية كريمية مثل كلود (#F0EEE6 أو bg الثيم لو فاتح) والكلام غامق — --bg يغيّرها.
@@ -9,17 +9,29 @@
    + thumbs_sheet.jpg (الثلاث جنب بعض) — اعرض الورقة، وبعدها 34_phone_preview.py <الأحسن> --youtube.
    ⛔ النص العربي ≥ 120 بكسل (على 1280) · الشعار ≥ 140 · تحت يمين 310×145 فاضي (مدة الفيديو) · 5 كلمات بالكثير.
 """
-import sys, os, json, subprocess, html, shutil, glob
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
+import sys, os, json, subprocess, html, glob
 from PIL import Image
 
 def arg(name, default=""):
     return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
 
-def chrome():
-    for c in ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "C:/Program Files/Google/Chrome/Application/chrome.exe",
-              "/usr/bin/google-chrome", "/usr/bin/chromium"]:
-        if os.path.exists(c): return c
-    return shutil.which("google-chrome") or shutil.which("chromium") or sys.exit("❌ ما لقيت كروم")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _chrome import find_chrome as chrome   # بحث كروم الموحّد (ويندوز/ماك/لينكس)
+from _fonts import font_css, base_url as fonts_base   # الخطوط من motion/fonts — بلا شبكة
 
 def uri(p): return "file://" + html.escape(os.path.abspath(p))
 
@@ -89,7 +101,7 @@ def page(variant):
         if xlogo: extra += f'<div class="obj" style="right:60px;bottom:190px"><img src="{uri(xlogo)}">{mark(False)}</div>'
         if oklogo: extra += f'<div class="obj" style="left:60px;bottom:190px"><img src="{uri(oklogo)}">{mark(True)}</div>'
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
-@import url('https://fonts.googleapis.com/css2?family={font.replace(' ', '+')}:wght@800;900&display=swap');
+{font_css(font, [800, 900], fonts_base())}
 *{{margin:0}} html,body{{width:1280px;height:720px;overflow:hidden}}
 body{{position:relative;background:radial-gradient(ellipse 75% 85% at 50% 45%,{bg} 0%,{bg2} 130%);font-family:'{font}',Cairo,sans-serif}}
 .me{{position:absolute;bottom:0;{face};filter:drop-shadow(0 18px 40px rgba(0,0,0,{.22 if light else .45}))}}

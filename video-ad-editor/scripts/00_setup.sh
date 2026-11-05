@@ -2,7 +2,7 @@
 # فحص وتجهيز الأدوات.  ./00_setup.sh          → يفحص ويقول وش ناقص
 #                      ./00_setup.sh --install → ينزّل الناقص (بعد إذن المستخدم)
 #                      ./00_setup.sh --extras  → الإضافات الاختيارية: تنظيف صوت ذكي · نبض · بحث بالمعنى
-# ✏️ معدّل ليشتغل على ويندوز وماك ولينكس. الأصل الماكي محفوظ بـ00_setup.sh.mac-orig
+# ✏️ معدّل ليشتغل على ويندوز وماك ولينكس.
 . "$(dirname "$0")/_compat.sh"
 INSTALL=0; [ "$1" = "--install" ] && INSTALL=1
 MISS=(); OK=(); NOTE=()
@@ -24,32 +24,7 @@ if [ "$OS" = linux ] && { [ -n "$CLAUDE_SANDBOX" ] || [ ! -d /Applications ]; } 
   CLOUD=1
 fi
 
-# 🔄 تحديث تلقائي (v2.9): نقارن VERSION المحلي بآخر إصدار على قت هب بصمت (5 ثوانٍ كحد أقصى).
-#    لو فيه أحدث: نطبع سطراً واحداً — وكلود يسأل المستخدم ثم يشغّل: bash scripts/00_setup.sh --update
-SKROOT="$(cd "$(dirname "$0")/.." && pwd)"; LOCALV="$(cat "$SKROOT/VERSION" 2>/dev/null || echo 0)"
-# v4: لو السكل منصّب كـplugin (majed-video) التحديث يكون من مدير الإضافات — مو بالاستبدال اليدوي
-case "$SKROOT" in */.claude/plugins/*) PLUGIN=1 ;; *) PLUGIN=0 ;; esac
-PLUG_UPD="claude plugin marketplace update majed-video && claude plugin update majed-video@majed-video"
-if [ "$1" = "--update" ] && [ "$PLUGIN" = 1 ]; then
-  echo "ℹ️ السكل منصّب كـplugin — شغّل: $PLUG_UPD  (ثم افتح جلسة جديدة)"; exit 0
-fi
-if [ "$1" = "--update" ]; then
-  TMP="$(mktemp -d)"; echo "⬇️ أنزّل آخر إصدار…"
-  if curl -sL -m 120 -o "$TMP/skill.zip" https://github.com/majedphotos/video-ad-editor/releases/latest/download/video-ad-editor.skill \
-     && unzip -q -o "$TMP/skill.zip" -d "$TMP/x" && [ -f "$TMP/x/video-ad-editor/SKILL.md" ]; then
-    rsync -a --delete --exclude=bin --exclude=hdr2sdr --exclude=personmask --exclude=facetrack --exclude=node_modules "$TMP/x/video-ad-editor/" "$SKROOT/" \
-      && echo "✅ انحدّث السكل إلى v$(cat "$SKROOT/VERSION" 2>/dev/null) — كمّل شغلك عادي" || echo "⚠️ ما قدرت أستبدل الملفات"
-  else echo "⚠️ ما قدرت أنزّل التحديث — جرّب لاحقاً"; fi
-  rm -rf "$TMP"; exit 0
-fi
-LATEST="$(curl -sL -m 5 https://api.github.com/repos/majedphotos/video-ad-editor/releases/latest 2>/dev/null | sed -n 's/.*"tag_name": *"v\([0-9.]*\)".*/\1/p' | head -1)"
-if [ -n "$LATEST" ] && [ "$LATEST" != "$LOCALV" ] && [ "$(printf '%s\n%s' "$LOCALV" "$LATEST" | sort -V | tail -1)" = "$LATEST" ]; then
-  if [ "$PLUGIN" = 1 ]; then
-    echo "🆕 فيه إصدار أحدث من السكل: v$LATEST (عندك v$LOCALV) — اسأل المستخدم، ولو وافق شغّل: $PLUG_UPD  (ثم جلسة جديدة)"
-  else
-    echo "🆕 فيه إصدار أحدث من السكل: v$LATEST (عندك v$LOCALV) — اسأل المستخدم، ولو وافق شغّل: bash scripts/00_setup.sh --update"
-  fi
-fi
+# ⛔ ما فيه تحديث ذاتي ولا فحص إصدار بالشبكة: التحديث يكون من مدير الإضافات (claude plugin update) أو git pull بيد المستخدم.
 
 # ➕ الإضافات (v3.9، أفكار Palmier) — اختيارية، السكل يشتغل بدونها وكل وحدة ترجع للطريق القديم لو ناقصة:
 #    ‹deep-filter› تنظيف صوت ذكي (02c) · ‹transformers› البحث بالمعنى (26)
@@ -64,6 +39,7 @@ extras_status(){
   local e=()
   { [ -x "$SKILL/bin/deep-filter" ] || [ -x "$SKILL/bin/deep-filter.exe" ] || have deep-filter; } && e+=("تنظيف-الصوت✅") || e+=("تنظيف-الصوت—")
   "$PY" -c "import transformers,PIL" 2>/dev/null && e+=("البحث-بالمعنى✅") || e+=("البحث-بالمعنى—")
+  "$PY" -c "import cv2" 2>/dev/null && e+=("البلر✅") || e+=("البلر—")
   echo "${e[*]}"
 }
 if [ "$1" = "--extras" ]; then
@@ -82,12 +58,22 @@ if [ "$1" = "--extras" ]; then
     line "⏬ تنظيف الصوت الذكي (DeepFilterNet3، ~20 ميقا)…"
     if curl -sfL -m 180 -o "$DF" "https://github.com/Rikorose/DeepFilterNet/releases/download/v$DFV/deep-filter-$DFV-$T" \
        && [ "$(wc -c < "$DF")" -gt 1000000 ]; then
+      # 🔒 بصمة SHA-256 مثبّتة (checksums.txt جنب هالسكربت) — لو ما طابقت نحذف الملف
+      WANT="$(awk -v f="deep-filter-$DFV-$T" '$2==f{print $1}' "$(dirname "$0")/checksums.txt" 2>/dev/null | tr -d '\r')"
+      if have sha256sum; then GOT="$(sha256sum "$DF" | awk '{print $1}')"; else GOT="$(shasum -a 256 "$DF" | awk '{print $1}')"; fi
+      if [ -z "$WANT" ] || [ "$GOT" != "$WANT" ]; then
+        rm -f "$DF"; line "   ⚠️ البصمة ما طابقت (checksums.txt) — حذفته، يبقى فلتر ffmpeg العادي"
+      else
       chmod +x "$DF"; [ "$OS" = mac ] && xattr -d com.apple.quarantine "$DF" 2>/dev/null
       "$DF" --help >/dev/null 2>&1 && line "   ✅ جاهز" || { rm -f "$DF"; line "   ⚠️ نزل بس ما اشتغل — يبقى فلتر ffmpeg العادي"; }
+      fi
     else rm -f "$DF"; line "   ⚠️ ما قدرت أنزّله — يبقى فلتر ffmpeg العادي"; fi
   fi
   "$PY" -c "import torch" 2>/dev/null || { line "⏬ torch (أساس الموديلات)…"; pipx2 torch; }
   "$PY" -c "import transformers,PIL" 2>/dev/null || { line "⏬ البحث بالمعنى (transformers — الموديل ~1.5 قيقا ينزل أول بحث)…"; pipx2 "transformers>=4.49" pillow sentencepiece protobuf || line "   ⚠️ فشل"; }
+  # البلر (blur_track.py): python -m pip install --no-deps opencv-python-headless==4.10.0.84
+  #   ⛔ لازم --no-deps ومثبّت: بدونه ينزل numpy 2 ويخرب torch/whisper (numpy يبقى 1.26.x)
+  "$PY" -c "import cv2" 2>/dev/null || { line "⏬ البلر (opencv)…"; pipx2 --no-deps opencv-python-headless==4.10.0.84 || line "   ⚠️ فشل"; }
   line "الإضافات: $(extras_status)"
   exit 0
 fi
@@ -97,18 +83,20 @@ have ffprobe && OK+=("ffprobe") || MISS+=("ffprobe")
 "$PY" -c "import whisper" 2>/dev/null && OK+=("whisper") || MISS+=("whisper")
 "$PY" -c "import numpy"   2>/dev/null && OK+=("numpy")   || MISS+=("numpy")
 
-# كروم: نفس ترتيب البحث اللي بالسكربتات
+# كروم: البحث الموحّد (_chrome.py). لو بايثون نفسه مو شغّال بعد، بحث bash بنفس الترتيب
 find_chrome(){
-  [ -n "$CHROME_PATH" ] && [ -f "$CHROME_PATH" ] && { echo "$CHROME_PATH"; return 0; }
-  local c
-  for c in "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-           "${ProgramFiles:-C:/Program Files}/Google/Chrome/Application/chrome.exe" \
-           "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe" \
-           "${LOCALAPPDATA:-}/Google/Chrome/Application/chrome.exe" \
-           "${ProgramFiles:-C:/Program Files}/Microsoft/Edge/Application/msedge.exe" \
+  "$PY" "$(dirname "$0")/_chrome.py" 2>/dev/null && return 0
+  "$PY" -c "import sys" >/dev/null 2>&1 && return 1   # بايثون شغّال وما لقى كروم
+  local k c pf="${ProgramFiles:-${PROGRAMFILES:-}}" p86 la="${LOCALAPPDATA:-}" gc=/Google/Chrome/Application/chrome.exe me=/Microsoft/Edge/Application/msedge.exe
+  p86="$(printenv 'ProgramFiles(x86)' 2>/dev/null)"
+  for k in "${CHROME_PATH:-}" "${CHROME:-}"; do [ -n "$k" ] && { echo "$k"; return 0; }; done
+  for c in "${pf:+$pf$gc}" "${p86:+$p86$gc}" "${la:+$la$gc}" "${p86:+$p86$me}" "${pf:+$pf$me}" \
+           "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
            /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
-    [ -f "$c" ] && { echo "$c"; return 0; }
-  done; return 1
+    [ -n "$c" ] && [ -f "$c" ] && { echo "$c"; return 0; }
+  done
+  for c in google-chrome chromium chromium-browser; do command -v "$c" 2>/dev/null && return 0; done
+  return 1
 }
 CHROME="$(find_chrome)" && OK+=("chrome") || MISS+=("chrome")
 
@@ -120,9 +108,10 @@ line "النظام: $OS · بايثون: $PY"
 [ -n "$CHROME" ] && line "كروم: $CHROME"
 line "الجاهز: ${OK[*]:-لا شيء}"
 line "الإضافات (اختيارية — 00_setup.sh --extras): $(extras_status)"
-if have npm; then line "المحرّك الثاني (ريموشن): متاح عند الطلب — 04b_remotion.sh setup ينزّله (~500 ميقا)"
-else line "المحرّك الثاني (ريموشن): يحتاج npm — غير متاح، والخفيف يكفي"; fi
-[ "$OS" = mac ] || NOTE+=("مؤثّر «الكلام ورا الشخص» (11_behind_text.js) يشتغل على ماك فقط — بقية السكل يشتغل عادي")
+# 🧭 جدول القدرات (AUDIT 8): وش ما يشتغل على هالجهاز — فحص فعلي (swiftc · cv2 · mlx_whisper) بـ_caps.py
+CAPS="$("$PY" "$(dirname "$0")/_caps.py" 2>/dev/null)"
+if [ -n "$CAPS" ]; then line "$CAPS"
+elif ! have swiftc; then line "⛔ ميزات الماك (swiftc/Vision) ما تشتغل هنا: «الكلام ورا الشخص» · قصّ الشخص · تتبّع الوجه والكف · محوّل HDR — قل للمستخدم من البداية"; fi
 
 if [ ${#MISS[@]} -eq 0 ]; then
   line "✅ كل شي جاهز — نقدر نبدأ."
@@ -146,7 +135,8 @@ for m in "${MISS[@]}"; do
       pipi openai-whisper || NOTE+=("whisper فشل") ;;
     numpy)   pipi numpy || NOTE+=("numpy فشل") ;;
     puppeteer-core) line "⏬ puppeteer-core…"
-      ( cd "$SKILL" && npm i --silent puppeteer-core ) || NOTE+=("puppeteer-core فشل") ;;
+      # npm ci = النسخة المقفولة بـpackage-lock.json، وما يعدّل package.json (التنصيب العادي كان يرفع النسخة ويوسّخ المستودع)
+      ( cd "$SKILL" && npm ci --silent --no-audit --no-fund ) || NOTE+=("puppeteer-core فشل") ;;
     chrome) NOTE+=("كروم مو منصّب — نزّله من google.com/chrome أو حدّد CHROME_PATH") ;;
   esac
 done

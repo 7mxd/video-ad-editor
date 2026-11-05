@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """🔬 فحص الإضاءة والألوان (سكوبس) — قبل أي تعديل لوني (30 سبتمبر، مأخوذة من فكرة Palmier).
 
-  python3 25_scopes.py <work|فيديو> [--n 12] [--json out.json]
+  python 25_scopes.py <work|فيديو> [--n 12] [--json out.json]
 
 يقيس عيّنات من الفيديو: نقطة الأسود والأبيض · نسبة الاحتراق (أبيض/أسود مقصوص) · متوسط الإضاءة ·
 ميل الحرارة (دافي/بارد) · ميل أخضر/بنفسجي · التشبّع. ويطلع حكماً بكلام بشري + تصحيحاً مقترحاً.
@@ -10,6 +10,20 @@
    («الفيديو غامج شوي ومايل للأصفر — أعدّله؟»)، ولو وافق: theme.json ← "grade":"auto"
    و03_cut_zoom.py يطبّق التصحيح المحسوب هني (scopes.json) بدل التدرّج الجاهز.
 """
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import json, os, subprocess, sys
 
 W_S, H_S = 192, 108          # عيّنة صغيرة تكفي للإحصاء

@@ -1,8 +1,22 @@
 # -*- coding: utf-8 -*-
 """فحص اللحمات لريل مقصوص من حلقة طويلة (v3.5): يفرّغ الملف النهائي ±4 ث حول كل لحمة (حدود cut.json) ويطبع
 المسموع جنب المتوقع (caps.json) — كلمة مكررة عند اللحمة أو بقايا كلام من برّا تبان هني. ⚠️ = كلمتين متتاليتين نفس الشي.
-  uv run --python 3.12 --with mlx-whisper --with numpy python 19_seam_check.py <work> <final.mp4>   (أو python3 مع openai-whisper)
+  uv run --python 3.12 --with mlx-whisper --with numpy python 19_seam_check.py <work> <final.mp4>   (أو python مع openai-whisper)
 التكرار ممكن يكون من كلام الشخص نفسه — شيّك بالمصدر قبل ما تقص. الحل المعتاد: ثبّت بداية/نهاية القطعة يدوياً على أهدأ نقطة."""
+# ── توافق ويندوز/UTF-8 (مضاف) ─────────────────────────────────────
+import sys as _sys, builtins as _bi
+try:
+    _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    _sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+_real_open = _bi.open
+def _utf8_open(f, mode="r", *a, **k):
+    if "b" not in mode and len(a) < 2:
+        k.setdefault("encoding", "utf-8")
+    return _real_open(f, mode, *a, **k)
+_bi.open = _utf8_open
+# ──────────────────────────────────────────────────────────────────
 import json, sys, os, re, subprocess, numpy as np
 W, F = sys.argv[1], sys.argv[2]; SR = 16000
 keep = json.load(open(os.path.join(W, "cut.json")))["keep"]; caps = json.load(open(os.path.join(W, "caps.json")))

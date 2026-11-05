@@ -20,7 +20,7 @@
 ## ⛔ قبل لا تبدأ
 
 1. **مشروع فاضي باسم.** قل له: «افتح كاب كت، سوّ مشروع جديد فاضي سمّه `<الاسم>`، وسكّر كاب كت كامل (Cmd+Q).»
-   تأكد إنه موجود: `python3 scripts/40_capcut.py projects`
+   تأكد إنه موجود: `python scripts/40_capcut.py projects`
 2. **كاب كت لازم يكون مسكّر وقت الكتابة.** السكربت يرفض لو شغّال — لا تلتف عليه، كاب كت يكتب فوق الملف ويضيع الشغل.
 3. **الأدوات:** نفس أدوات السكل (ffmpeg، كروم، puppeteer-core) + ffmpeg فيه `prores_ks` (الموجود بـbrew فيه).
 4. **ماك:** كاب كت محبوس بساندبوكس — ما يقرا إلا `~/Movies`. السكربت يحط كل شي بـ`~/Movies/capcut-<name>/` وينسخ له أي ملف برّاها تلقائياً. لا تغيّر هالمسار.
@@ -32,7 +32,7 @@
 **2. خطة أولية من فيديو الكلام:**
 
 ```bash
-python3 scripts/40_capcut.py skeleton <work> <work>/capcut.plan.json
+python scripts/40_capcut.py skeleton <work> <work>/capcut.plan.json
 ```
 
 مقطع كلام لكل قطعة من `cut.json` بكلماتها من وِسبر، ولقطة فيديو متزامنة لكل مقطع.
@@ -42,8 +42,8 @@ python3 scripts/40_capcut.py skeleton <work> <work>/capcut.plan.json
 **4. افحص واعرض:**
 
 ```bash
-python3 scripts/40_capcut.py check  <plan>      # جدول اللقطات والأوقات
-python3 scripts/40_capcut.py stills <plan>      # لقطتين PNG لكل موشن بـ~/Movies/capcut-<name>/stills
+python scripts/40_capcut.py check  <plan>      # جدول اللقطات والأوقات
+python scripts/40_capcut.py stills <plan>      # لقطتين PNG لكل موشن بـ~/Movies/capcut-<name>/stills
 ```
 
 ⛔ **اعرض عليه اللقطات وانتظر موافقته قبل الرسم الكامل.**
@@ -51,7 +51,7 @@ python3 scripts/40_capcut.py stills <plan>      # لقطتين PNG لكل موش
 **5. ابنِ واكتب** (كاب كت مسكّر):
 
 ```bash
-python3 scripts/40_capcut.py all <plan>         # مؤثرات + رسم الموشن + كتابة المشروع
+python scripts/40_capcut.py all <plan>         # مؤثرات + رسم الموشن + كتابة المشروع
 ```
 
 قل له: «افتح كاب كت ← المشروع `<الاسم>` — كل شي فيه تقدر تعدّله.»

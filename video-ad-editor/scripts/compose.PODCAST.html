@@ -1,4 +1,5 @@
 <!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../motion/fonts/fonts.css">
 <style>html,body{margin:0;background:#000}canvas{display:block}img{position:absolute;left:-9999px;top:0}</style></head><body>
 <canvas id="cv" width="1080" height="1920"></canvas>
 <img id="PRS"><img id="LOGO">
@@ -6,6 +7,7 @@
 /* ═══ وضع البودكاست — كاميرتان أو أكثر → ريل 9:16 ═══
    الأوضاع: FULL (كاميرا ملء الشاشة، بزوم اختياري) · SPLIT (كاميرا فوق وكاميرا تحت) · HEAD (كرت صغير تحت وراسه طالع + كولاج الكلام فوق)
    الألوان والخط من theme.json — لا لون ثابت هني. capStyle: "shadow" (نص أبيض بظل بلا خلفية) أو "card" (كرت) */
+const LOCAL_FONT=f=>[...document.fonts].some(x=>x.family.replace(/["']/g,'')===f);   /* بالحزمة (fonts.css) = محلي بلا شبكة */
 const W=1080,H=1920, cv=document.getElementById('cv'), X=cv.getContext('2d');
 const PRS=document.getElementById('PRS'), LOGO=document.getElementById('LOGO');
 let BG='#F3EFEA',INK='#1F1F1D',ACC='#D97757',MUT='#8A847A',FONT='Cairo',CAPSTYLE='shadow',SITE='';
@@ -28,7 +30,7 @@ window.init=d=>{
   CAPS=d.caps.cards; TOTAL=d.caps.total; SCENES=d.scenes; OUTRO=d.outro||1.8; HEADBOX=d.headbox||{}; FACES=d.faces||{};
   const t=d.theme||{}; BG=t.bg||BG; INK=t.ink||INK; ACC=t.acc||ACC; MUT=t.mut||MUT; FONT=t.font||FONT; CAPSTYLE=t.capStyle||CAPSTYLE; SITE=t.site||t.handle||''; ONACC=(typeof t.onAcc==='string'&&/^#[0-9A-Fa-f]{6}$/.test(t.onAcc))?t.onAcc:null;
   if(t.fontFiles){ for(const f of t.fontFiles){ const ff=new FontFace(FONT,'url('+f.src+')',{weight:String(f.weight||400)}); document.fonts.add(ff); } }
-  else if(FONT!=='Cairo'){ const l=document.createElement('link');l.rel='stylesheet';l.href='https://fonts.googleapis.com/css2?family='+encodeURIComponent(FONT)+':wght@400;600;700;800;900&display=swap';document.head.appendChild(l); }
+  else if(!LOCAL_FONT(FONT)){ const l=document.createElement('link');l.rel='stylesheet';l.href='https://fonts.googleapis.com/css2?family='+encodeURIComponent(FONT)+':wght@400;600;700;800;900&display=swap';document.head.appendChild(l); }
   if(t.logo) LOGO.src=t.logo;
   /* الكابشن: كلمتين إلى ثلاث */
   CHUNKS=[];
