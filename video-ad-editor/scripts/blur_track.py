@@ -240,41 +240,9 @@ class _Matcher:
         return q, int(inl.sum()) / len(good)
 
 
-def _track(video, matcher, scale, i0=0, i1=None, anchor=None):
-    """Detect on every frame of [i0, i1), clean up, extend runs, and return one FrameBox per frame."""
-    info = _probe(video)
-    w, h, rate = info["w"], info["h"], info["rate"]
-    sw, sh = max(round(w * scale), 1), max(round(h * scale), 1)
-    raw, n = {}, 0
-    for i, g in read_frames(video, w, h, rate=rate):
-        n = i + 1
-        if i < i0 or (i1 is not None and i >= i1):
-            continue
-        r = matcher.locate(cv2.resize(g, (sw, sh), interpolation=cv2.INTER_AREA) if scale != 1 else g)
-        if r is not None:
-            raw[i] = (r[0] / scale, r[1])
-    i1 = n if i1 is None else min(i1, n)
-    if i0 >= i1:
-        raise ValueError(f"window [{i0}, {i1}) is empty (video has {n} frames)")
-    if anchor is not None:
-        raw[anchor[0]] = (np.asarray(anchor[1], float), 1.0)
-    # drop centroid outliers
-    thr = OUTLIER_FRAC * max(w, h)
-    keep = {}
-    for f, (q, c) in raw.items():
-        nb = [raw[g][0].mean(0) for g in range(f - 5, f + 6) if g in raw and g != f]
-        if anchor is None or f != anchor[0]:
-            if len(nb) >= 2 and np.linalg.norm(q.mean(0) - np.median(nb, 0)) > thr:
-                continue
-        keep[f] = (q, c)
-    # smooth corners over consecutive detections
-    L = {}
-    for f, (q, c) in keep.items():
-        if (anchor is not None and f == anchor[0]) or f - 1 not in keep or f + 1 not in keep:
-            L[f] = (q, c)  # symmetric window only: a one-sided mean lags behind a moving target
-        else:
-            L[f] = (np.mean([keep[g][0] for g in (f - 1, f, f + 1) if g in keep], 0), c)
-    # extend each run outward by template matching (motion-blurred entries and exits)
+def extend_runs(video, L, i0, i1, w, h, rate):
+    """Extend each run in L ({i: (poly, conf)}) outward by template matching (motion-blurred entries and exits).
+    Mutates L."""
     edges = []
     for a, b in _ranges(L):
         edges += [(a, -1), (b, 1)]
@@ -310,6 +278,44 @@ def _track(video, matcher, scale, i0=0, i1=None, anchor=None):
                 break
             px, py = sx0 + loc[0], sy0 + loc[1]
             L[f] = (grow(poly, 1.12) + np.array([px - x0, py - y0], float), float(sc))
+
+
+def _track(video, matcher, scale, i0=0, i1=None, anchor=None):
+    """Detect on every frame of [i0, i1), clean up, extend runs, and return one FrameBox per frame."""
+    info = _probe(video)
+    w, h, rate = info["w"], info["h"], info["rate"]
+    sw, sh = max(round(w * scale), 1), max(round(h * scale), 1)
+    raw, n = {}, 0
+    for i, g in read_frames(video, w, h, rate=rate):
+        n = i + 1
+        if i < i0 or (i1 is not None and i >= i1):
+            continue
+        r = matcher.locate(cv2.resize(g, (sw, sh), interpolation=cv2.INTER_AREA) if scale != 1 else g)
+        if r is not None:
+            raw[i] = (r[0] / scale, r[1])
+    i1 = n if i1 is None else min(i1, n)
+    if i0 >= i1:
+        raise ValueError(f"window [{i0}, {i1}) is empty (video has {n} frames)")
+    if anchor is not None:
+        raw[anchor[0]] = (np.asarray(anchor[1], float), 1.0)
+    # drop centroid outliers
+    thr = OUTLIER_FRAC * max(w, h)
+    keep = {}
+    for f, (q, c) in raw.items():
+        nb = [raw[g][0].mean(0) for g in range(f - 5, f + 6) if g in raw and g != f]
+        if anchor is None or f != anchor[0]:
+            if len(nb) >= 2 and np.linalg.norm(q.mean(0) - np.median(nb, 0)) > thr:
+                continue
+        keep[f] = (q, c)
+    # smooth corners over consecutive detections
+    L = {}
+    for f, (q, c) in keep.items():
+        if (anchor is not None and f == anchor[0]) or f - 1 not in keep or f + 1 not in keep:
+            L[f] = (q, c)  # symmetric window only: a one-sided mean lags behind a moving target
+        else:
+            L[f] = (np.mean([keep[g][0] for g in (f - 1, f, f + 1) if g in keep], 0), c)
+    # extend each run outward by template matching (motion-blurred entries and exits)
+    extend_runs(video, L, i0, i1, w, h, rate)
     return [FrameBox(i, _plist(L[i][0]), round(float(L[i][1]), 3), "tracked") if i in L
             else FrameBox(i, None, 0.0, "lost") for i in range(i0, i1)]
 
