@@ -135,3 +135,57 @@ def test_unknown_kind_exit2(vids, tmp_path):
     r = run_cli("detect", tmp_path, video, "--kinds", "plate")
     assert r.returncode == 2
     assert "keyframes" in r.stderr
+
+
+# ---- faces (Task 3) ----------------------------------------------------------------------------------------------
+import os  # noqa: E402
+
+import _detect  # noqa: E402
+
+
+def run_cli_env(env_extra, *args):
+    env = dict(os.environ, **env_extra)
+    return subprocess.run([sys.executable, str(SCRIPTS / "blur_track.py"), *map(str, args)],
+                          capture_output=True, text=True, encoding="utf-8", env=env)
+
+
+def test_face_model_missing_warns(vids, tmp_path):
+    video, truth = vids["qr"]
+    home = tmp_path / "home"
+    home.mkdir()
+    work = tmp_path / "w"
+    r = run_cli_env({"VAE_HOME": str(home)}, "detect", work, video, "--kinds", "face,qr")
+    assert r.returncode == 0, r.stderr
+    assert "نموذج الوجوه ناقص" in r.stdout + r.stderr
+    assert_all_covered(work, truth)
+    r = run_cli_env({"VAE_HOME": str(home)}, "detect", tmp_path / "w2", video, "--kinds", "face")
+    assert r.returncode == 2
+
+
+def test_face_model_sha_mismatch(tmp_path, monkeypatch):
+    (tmp_path / "models").mkdir()
+    (tmp_path / "models" / _detect.YUNET_FILE).write_bytes(b"not a model")
+    monkeypatch.setenv("VAE_HOME", str(tmp_path))
+    assert _detect.face_model() is None
+
+
+def test_face_plumbing(tmp_path, monkeypatch):
+    """A dark square stands in for a face; the fake detector finds it on the BGR frame it is given."""
+    video = tmp_path / "f.mp4"
+    tile = np.zeros((120, 120), np.uint8)
+    truth = make_code_video(video, [{"tile": tile, "start": (50, 100), "end": (300, 600)}])
+
+    def fake_faces(bgr, model):
+        assert bgr.ndim == 3
+        ys, xs = np.nonzero(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY) < 60)
+        if xs.size == 0:
+            return []
+        x0, y0, x1, y1 = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
+        return [("face", np.float32([(x0, y0), (x1, y0), (x1, y1), (x0, y1)]))]
+
+    monkeypatch.setattr(_detect, "face_model", lambda: Path("fake.onnx"))
+    monkeypatch.setattr(_detect, "find_faces", fake_faces)
+    assert bt.main(["detect", str(tmp_path), str(video), "--kinds", "face"]) == 0
+    _, frames, _ = bt.load_json(tmp_path)
+    assert {f.target for f in frames if f.poly is not None} == {0}
+    assert_all_covered(tmp_path, truth)

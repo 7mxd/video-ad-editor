@@ -40,6 +40,7 @@ extras_status(){
   { [ -x "$SKILL/bin/deep-filter" ] || [ -x "$SKILL/bin/deep-filter.exe" ] || have deep-filter; } && e+=("تنظيف-الصوت✅") || e+=("تنظيف-الصوت—")
   "$PY" -c "import transformers,PIL" 2>/dev/null && e+=("البحث-بالمعنى✅") || e+=("البحث-بالمعنى—")
   "$PY" -c "import cv2" 2>/dev/null && e+=("البلر✅") || e+=("البلر—")
+  [ -s "${VAE_HOME:-$HOME/.video-ad-editor}/models/face_detection_yunet_2023mar.onnx" ] && e+=("وجوه-البلر✅") || e+=("وجوه-البلر—")
   echo "${e[*]}"
 }
 if [ "$1" = "--extras" ]; then
@@ -74,6 +75,16 @@ if [ "$1" = "--extras" ]; then
   # البلر (blur_track.py): python -m pip install --no-deps opencv-python-headless==4.10.0.84
   #   ⛔ لازم --no-deps ومثبّت: بدونه ينزل numpy 2 ويخرب torch/whisper (numpy يبقى 1.26.x)
   "$PY" -c "import cv2" 2>/dev/null || { line "⏬ البلر (opencv)…"; pipx2 --no-deps opencv-python-headless==4.10.0.84 || line "   ⚠️ فشل"; }
+  # وجوه البلر التلقائي (YuNet ~0.2 ميقا، بصمة بـchecksums.txt) — بدونه الوجوه بالطريق الثاني (keyframes + boxes)
+  YN="face_detection_yunet_2023mar.onnx"; VM="${VAE_HOME:-$HOME/.video-ad-editor}/models"
+  if [ ! -s "$VM/$YN" ]; then
+    line "⏬ نموذج الوجوه (YuNet)…"; mkdir -p "$VM"
+    if curl -sfL -m 120 -o "$VM/$YN" "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/$YN"; then
+      WANT="$(awk -v f="$YN" '$2==f{print $1}' "$(dirname "$0")/checksums.txt" 2>/dev/null | tr -d '')"
+      if have sha256sum; then GOT="$(sha256sum "$VM/$YN" | awk '{print $1}')"; else GOT="$(shasum -a 256 "$VM/$YN" | awk '{print $1}')"; fi
+      if [ -z "$WANT" ] || [ "$GOT" != "$WANT" ]; then rm -f "$VM/$YN"; line "   ⚠️ البصمة ما طابقت — حذفته"; else line "   ✅ جاهز"; fi
+    else rm -f "$VM/$YN"; line "   ⚠️ ما قدرت أنزّله — الوجوه بالطريق الثاني"; fi
+  fi
   line "الإضافات: $(extras_status)"
   exit 0
 fi

@@ -4,6 +4,8 @@ Route A (built-in OpenCV detectors): qr · barcode · face → scan sampled fram
 instance → fill the frames in between → blur_track's fail-safe / apply / qa, unchanged.
 Route B (anything named in words) lives in keyframes/boxes (see references/blur.md).
 """
+import hashlib
+import os
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +13,12 @@ import numpy as np
 import blur_track as bt
 from blur_track import cv2
 
-ROUTE_A = ("qr", "barcode")
+ROUTE_A = ("qr", "barcode", "face")
+YUNET_FILE = "face_detection_yunet_2023mar.onnx"
+YUNET_URL = "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/" + YUNET_FILE
+YUNET_SHA256 = "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"
+FACE_SCORE = 0.6
+FACE_GROW = 1.2       # hair, ears and chin sit outside the detector's box
 GROW = 1.1            # detector quads hug the ink; blur a little past it
 BAR_SHORT = 1.3       # after refinement: room for the digits printed under the bars
 DUP_IOU = 0.5         # same code found at two scales
@@ -35,8 +42,36 @@ def _order(q):
     return np.roll(q, -k, axis=0)
 
 
+def face_model():
+    """The YuNet model under VAE_HOME/models, only if its sha256 matches (00_setup.sh --extras fetches it)."""
+    home = Path(os.environ.get("VAE_HOME") or (Path.home() / ".video-ad-editor"))
+    p = home / "models" / YUNET_FILE
+    if not p.is_file():
+        return None
+    return p if hashlib.sha256(p.read_bytes()).hexdigest() == YUNET_SHA256 else None
+
+
+def find_faces(bgr, model):
+    """-> [("face", quad)] for one BGR frame, each box grown FACE_GROW about its centre."""
+    h, w = bgr.shape[:2]
+    key = ("face", str(model))
+    if key not in _DET:
+        _DET[key] = cv2.FaceDetectorYN.create(str(model), "", (w, h), FACE_SCORE)
+    det = _DET[key]
+    det.setInputSize((w, h))
+    _, faces = det.detect(bgr)
+    out = []
+    for f in [] if faces is None else faces:
+        x, y, fw, fh = map(float, f[:4])
+        q = np.float32([(x, y), (x + fw, y), (x + fw, y + fh), (x, y + fh)])
+        out.append(("face", grow_axes(q, FACE_GROW, FACE_GROW)))
+    return out
+
+
 def find_codes(gray, kinds):
-    """-> [(kind, 4x2 float32 quad)] for every QR / barcode found in one grey frame."""
+    """-> [(kind, 4x2 float32 quad)] for every QR / barcode found in one grey (or BGR) frame."""
+    if gray.ndim == 3:
+        gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
     out = []
     for kind in ("qr", "barcode"):
         if kind not in kinds:

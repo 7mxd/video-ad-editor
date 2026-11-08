@@ -668,10 +668,23 @@ def _detect_cmd(args, meta):
     if other or not kinds:
         raise ValueError(f"ما أكشف «{'، '.join(other) or '—'}» بروحي (أعرف: {', '.join(_detect.ROUTE_A)}). "
                          "غيرها بالطريق الثاني: keyframes ثم boxes (references/blur.md)")
+    finders, bgr = [], False
+    if "face" in kinds:
+        model = _detect.face_model()
+        if model is None:
+            print("⚠️ نموذج الوجوه ناقص (00_setup.sh --extras) — الوجوه بالطريق الثاني: keyframes + boxes")
+            kinds = [k for k in kinds if k != "face"]
+            if not kinds:
+                raise ValueError("ما بقى شي أكشفه بروحي — الوجوه: keyframes ثم boxes، أو ثبّت النموذج")
+        else:
+            finders.append(lambda img, ks: _detect.find_faces(img, model))
+            bgr = True
+    if any(k in ("qr", "barcode") for k in kinds):
+        finders.append(_detect.find_codes)
     old, old_flag, ids = _load_existing(args, meta)
     fps = meta["fps"]
     i0, i1 = _window(Path(args.video), args.t0, args.t1)
-    dets = _detect.scan(Path(args.video), set(kinds), i0, i1)
+    dets = _detect.scan(Path(args.video), set(kinds), i0, i1, bgr=bgr, finders=finders)
     tracks = _detect.link(dets, fps, max(meta["w"], meta["h"]))
     for k in kinds:
         if not any(t["kind"] == k for t in tracks):
@@ -703,9 +716,9 @@ def main(argv=None):
         g.add_argument("--add", action="store_true", help="a new target, kept next to the ones in blur.json")
         g.add_argument("--target", type=int, default=None, help="re-mark this existing target")
         g.add_argument("--replace", action="store_true", help="start blur.json over, dropping its targets")
-    dt = sub.add_parser("detect", help="find qr / barcode by itself")
+    dt = sub.add_parser("detect", help="find qr / barcode / face by itself")
     dt.add_argument("work"); dt.add_argument("video")
-    dt.add_argument("--kinds", required=True, help="comma list: qr,barcode")
+    dt.add_argument("--kinds", required=True, help="comma list: qr,barcode,face")
     dt.add_argument("--from", dest="t0", type=float, default=0)
     dt.add_argument("--to", dest="t1", type=float, default=None)
     g = dt.add_mutually_exclusive_group()
