@@ -202,7 +202,8 @@ def test_attribution():
     assert plugin["upstream"] == "https://github.com/majedphotos/video-ad-editor"
     assert plugin["description"].endswith("Based on video-ad-editor by Majed Alzaabi")
     version = (ROOT / "video-ad-editor/VERSION").read_text(encoding="utf-8").strip()
-    assert plugin["version"] == version == "1.0.0"
+    latest = re.search(r"^## (\d+\.\d+\.\d+)", (ROOT / "CHANGELOG.md").read_text(encoding="utf-8"), re.M).group(1)
+    assert plugin["version"] == version == latest
 
 
 def test_setup_installs_from_lockfile():
