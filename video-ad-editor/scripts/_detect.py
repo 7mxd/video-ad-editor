@@ -57,7 +57,9 @@ def find_faces(bgr, model):
     h, w = bgr.shape[:2]
     key = ("face", str(model))
     if key not in _DET:
-        _DET[key] = cv2.FaceDetectorYN.create(str(model), "", (w, h), FACE_SCORE)
+        # from a buffer: OpenCV's ONNX reader can't open non-ASCII paths on Windows
+        _DET[key] = cv2.FaceDetectorYN.create("onnx", np.fromfile(str(model), np.uint8), np.array([], np.uint8),
+                                              (w, h), FACE_SCORE)
     det = _DET[key]
     det.setInputSize((w, h))
     _, faces = det.detect(bgr)
@@ -67,6 +69,14 @@ def find_faces(bgr, model):
         q = np.float32([(x, y), (x + fw, y), (x + fw, y + fh), (x, y + fh)])
         out.append(("face", grow_axes(q, FACE_GROW, FACE_GROW)))
     return out
+
+
+def align(q, ref):
+    """Roll q's corners so each sits nearest the matching corner of ref (start corner flips past a 45° tilt)."""
+    q = np.asarray(q, np.float32).reshape(4, 2)
+    ref = np.asarray(ref, np.float32).reshape(4, 2)
+    k = min(range(4), key=lambda r: float(np.linalg.norm(np.roll(q, -r, axis=0) - ref, axis=1).sum()))
+    return np.roll(q, -k, axis=0)
 
 
 def find_codes(gray, kinds):
@@ -213,19 +223,26 @@ def link(dets, fps, long_side, max_gap_s=1.0):
 
 def fill(video, track, i0, i1):
     """One track's sampled quads -> FrameBoxes over the track's own span: detected frames (conf 1.0),
-    corners interpolated across gaps <= BRIDGE (conf 0.9), runs extended by template matching; other frames
-    in the span are `lost` so apply_failsafe holds or flags them."""
+    corners interpolated between detections (conf 0.9 up to BRIDGE frames, else 0.4 so the fail-safe widens it),
+    runs extended by template matching at both ends."""
     info = bt._probe(Path(video))
     w, h, rate = info["w"], info["h"], info["rate"]
     if i1 is None:
         i1 = bt.count_frames(Path(video), rate)
-    L = {i: (bt.grow(q, GROW), 1.0) for i, q in track.items()}
+    L, prev = {}, None
+    for i in sorted(track):
+        q = np.asarray(bt.grow(track[i], GROW), np.float32)
+        if prev is not None:
+            q = align(q, prev)     # same physical corner in the same slot, or interpolation folds the quad
+        L[i], prev = (q, 1.0), q
     ks = sorted(L)
     for a, b in zip(ks, ks[1:]):
-        if 1 < b - a <= bt.BRIDGE:
+        if b - a > 1:
+            # both ends are detections: follow the motion. Past BRIDGE the fail-safe widens it (conf < 0.5)
+            c = 0.9 if b - a <= bt.BRIDGE else 0.4
             for j in range(a + 1, b):
                 u = (j - a) / (b - a)
-                L[j] = ((1 - u) * L[a][0] + u * L[b][0], 0.9)
+                L[j] = ((1 - u) * L[a][0] + u * L[b][0], c)
     bt.extend_runs(Path(video), L, i0, i1, w, h, rate)
     lo, hi = min(L), max(L)
     return [bt.FrameBox(i, bt._plist(L[i][0]), round(float(L[i][1]), 3), "tracked") if i in L
@@ -292,8 +309,12 @@ def track_anchors(video, anchors, t0=0, t1=None):
     """One item marked on several keyframes: track_box from each (t, (x, y, w, h)) and keep, per frame, a found
     polygon over a lost one and the higher confidence among found ones. Trimmed to the item's own span."""
     best = {}
-    for t, box in anchors:
-        for f in bt.track_box(Path(video), t, box, t0, t1):
+    anchors = sorted({t: box for t, box in reversed(anchors)}.items())   # one anchor per time, in order
+    for k, (t, box) in enumerate(anchors):
+        # each anchor covers up to its neighbours only: SIFT runs ~2x the item's span, not once per anchor
+        a = max(t0, anchors[k - 1][0]) if k else t0
+        b = anchors[k + 1][0] if k + 1 < len(anchors) else t1
+        for f in bt.track_box(Path(video), t, box, a, b):
             cur = best.get(f.i)
             if cur is None or (cur.state == "lost" and f.state != "lost") \
                     or (f.state != "lost" and cur.state != "lost" and f.conf > cur.conf):

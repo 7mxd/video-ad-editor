@@ -303,3 +303,57 @@ def test_boxes_item_in_part_of_video_not_flagged(tmp_path):
     _, _, flagged = bt.load_json(tmp_path)
     assert flagged == []
     assert truth[15] is not None
+
+
+# ---- final-review fixes ------------------------------------------------------------------------------------------
+def _rot_square(cx, cy, half, deg):
+    a = np.deg2rad(deg)
+    R = np.float32([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+    return (np.float32([(-half, -half), (half, -half), (half, half), (-half, half)]) @ R.T) + (cx, cy)
+
+
+def test_fill_tilt_through_45_keeps_area(vids):
+    """Corner order flips when a code's tilt crosses 45°; the interpolated frame must not shrink."""
+    video, _ = vids["none"]
+    track = {i: _detect._order(_rot_square(270, 480, 80, 40 + 2 * i)) for i in range(0, 8, 2)}
+    frames = {f.i: f for f in _detect.fill(video, track, 0, 60)}
+    full = cv2.contourArea(np.float32(_rot_square(270, 480, 80, 45)))
+    for i in (1, 3, 5):
+        assert frames[i].poly is not None
+        assert cv2.contourArea(np.float32(frames[i].poly)) >= 0.95 * full, i
+
+
+def test_fill_interpolates_long_gap_with_low_conf(vids):
+    """Two detections 20 frames apart: the gap follows the motion (widened by the fail-safe), not held."""
+    video, _ = vids["none"]
+    q = lambda x: np.float32([(x, 400), (x + 100, 400), (x + 100, 500), (x, 500)])  # noqa: E731
+    frames = {f.i: f for f in _detect.fill(video, {0: q(50), 20: q(250)}, 0, 60)}
+    mid = frames[10]
+    assert mid.poly is not None and mid.conf < 0.5
+    assert abs(np.float32(mid.poly).mean(0)[0] - 200) < 10
+
+
+def test_track_anchors_windows_between_neighbours(monkeypatch):
+    calls = []
+
+    def fake(video, t, box, t0=0, t1=None):
+        calls.append((t, t0, t1))
+        return [bt.FrameBox(round(t * 30), [(0, 0), (9, 0), (9, 9), (0, 9)], 1.0, "tracked")]
+
+    monkeypatch.setattr(bt, "track_box", fake)
+    _detect.track_anchors(Path("v.mp4"), [(2.5, (0, 0, 9, 9)), (0.5, (0, 0, 9, 9)), (1.5, (0, 0, 9, 9))])
+    assert sorted(calls) == [(0.5, 0, 1.5), (1.5, 0.5, 2.5), (2.5, 1.5, None)]
+
+
+def test_face_model_arabic_home(tmp_path, monkeypatch):
+    src = Path(os.environ.get("VAE_HOME") or (Path.home() / ".video-ad-editor")) / "models" / _detect.YUNET_FILE
+    if not src.is_file():
+        pytest.skip("YuNet model not installed")
+    home = tmp_path / "مجلد عربي"
+    (home / "models").mkdir(parents=True)
+    (home / "models" / _detect.YUNET_FILE).write_bytes(src.read_bytes())
+    monkeypatch.setenv("VAE_HOME", str(home))
+    model = _detect.face_model()
+    assert model is not None
+    _detect._DET.clear()
+    assert _detect.find_faces(np.full((240, 320, 3), 128, np.uint8), model) == []

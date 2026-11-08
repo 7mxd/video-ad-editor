@@ -331,3 +331,8 @@ def test_qa_outside_zero_matches_old(clips, tmp_path):
 def test_qa_sheet_draws_outside_tiles(clips, tmp_path):
     video, _ = clips["plain"]
     assert bt.qa_sheet(video, _first_half(), tmp_path / "q.jpg", outside=6) == 8
+
+
+def test_qa_outside_includes_frames_next_to_windows():
+    picks, outside = bt.qa_picks(_first_half(), 90, max_tiles=24, outside=6, fps=30)
+    assert {50, 59} <= set(outside)        # 0.2 s and 0.5 s after the window's last frame (44)

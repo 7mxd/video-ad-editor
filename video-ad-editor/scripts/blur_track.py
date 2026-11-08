@@ -518,16 +518,27 @@ def _states(frames):
     return state
 
 
-def qa_picks(frames, n, max_tiles=24, outside=6):
-    """-> (sorted picks, outside picks). Outside = up to `outside` frames spread over indices with no polygon
-    (a missed item shows up there); then first/last frame of each window; then widened/held/lost frames."""
+def qa_picks(frames, n, max_tiles=24, outside=6, fps=None):
+    """-> (sorted picks, outside picks). Outside = up to `outside` frames with no polygon: first 0.2 s and 0.5 s
+    before/after each window (where an item is most likely still showing), then spread over the rest; then the
+    first/last frame of each window; then widened/held/lost frames."""
     polys = _by_frame(frames)
     state = _states(frames)
     edges = []
     for a, b in _ranges(polys):
         edges += [a] if a == b else [a, b]
     unsure = [i for i in sorted(state) if state[i] != "tracked" and i not in edges]
-    out = _spread([i for i in range(n) if i not in polys], min(outside, max_tiles))
+    cap = min(outside, max_tiles)
+    near = []
+    if fps:
+        for a, b in _ranges(polys):
+            for d in (0.2, 0.5):
+                for i in (b + round(d * fps), a - round(d * fps)):
+                    if 0 <= i < n and i not in polys and i not in near:
+                        near.append(i)
+    out = near[:cap]
+    rest = [i for i in range(n) if i not in polys and i not in out]
+    out += _spread(rest, cap - len(out))
     picks = out + _spread(edges, max_tiles - len(out))
     picks = sorted(set(picks + _spread(unsure, max_tiles - len(picks))))
     return picks, out
@@ -542,7 +553,7 @@ def qa_sheet(video, frames, out_jpg, max_tiles=24, outside=6, n=None):
     state = _states(frames)
     if n is None:
         n = count_frames(video, _probe(video)["rate"]) if outside > 0 else 0
-    picks, _ = qa_picks(frames, n, max_tiles, outside)
+    picks, _ = qa_picks(frames, n, max_tiles, outside, fps)
     if not picks:
         raise ValueError("nothing to show — blur.json has no frames")
     TW, TH, BAR = 240, 240, 22
