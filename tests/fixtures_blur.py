@@ -78,3 +78,78 @@ def make_offset(src, dst, offset=0.067):
                         "-c:v", "copy", "-c:a", "aac", str(dst)])
     assert r.returncode == 0
     return Path(dst)
+
+
+# ---- codes (QR / EAN-13) on a portrait frame, for auto-detect tests -------------------------------------------------
+CW, CH = 540, 960
+_EAN_L = ["0001101", "0011001", "0010011", "0111101", "0100011", "0110001", "0101111", "0111011", "0110111", "0001011"]
+_EAN_G = ["0100111", "0110011", "0011011", "0100001", "0011101", "0111001", "0000101", "0010001", "0001001", "0010111"]
+_EAN_R = ["1110010", "1100110", "1101100", "1000010", "1011100", "1001110", "1010000", "1000100", "1001000", "1110100"]
+_EAN_P = ["LLLLLL", "LLGLGG", "LLGGLG", "LLGGGL", "LGLLGG", "LGGLLG", "LGGGLL", "LGLGLG", "LGLGGL", "LGGLGL"]
+
+
+def ean13_tile(code="4006381333931", module=3, height=140, quiet=10):
+    par = _EAN_P[int(code[0])]
+    bits = "101" + "".join((_EAN_L if par[i] == "L" else _EAN_G)[int(c)] for i, c in enumerate(code[1:7]))
+    bits += "01010" + "".join(_EAN_R[int(c)] for c in code[7:]) + "101"
+    t = np.full((height + 20, (len(bits) + 2 * quiet) * module), 255, np.uint8)
+    for i, b in enumerate(bits):
+        if b == "1":
+            t[10:10 + height, (quiet + i) * module:(quiet + i + 1) * module] = 0
+    return t
+
+
+def qr_tile(text="TEST-123", size=200):
+    q = cv2.QRCodeEncoder.create().encode(text)
+    return cv2.resize(q, (size, size), interpolation=cv2.INTER_NEAREST)
+
+
+def _ink_quad(tile):
+    ys, xs = np.nonzero(tile < 128)
+    x0, y0, x1, y1 = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
+    return np.float32([(x0, y0), (x1, y0), (x1, y1), (x0, y1)])
+
+
+def make_code_video(path, codes, n=60, fps=30, hide=None):
+    """codes: [{"tile": uint8 gray, "start": (x, y), "end": (x, y), "warp": degrees around the vertical axis}].
+    hide=(f0, f1) leaves every code out of frames f0..f1-1.
+    Returns truth[i] = list (one per code) of the 4 true ink corners in frame pixels, or None when hidden."""
+    path = Path(path)
+    rng = np.random.default_rng(3)
+    bg = np.clip(150 + rng.integers(-12, 13, (CH, CW)), 0, 255).astype(np.uint8)
+    prepared = []
+    for c in codes:
+        t = c["tile"]
+        h, w = t.shape
+        src = np.float32([(0, 0), (w, 0), (w, h), (0, h)])
+        a = np.deg2rad(c.get("warp", 0))
+        dw, shrink = w * np.cos(a), 0.5 * h * (1 - np.cos(a))
+        dst = np.float32([(0, 0), (dw, shrink), (dw, h - shrink), (0, h)])
+        Hm = cv2.getPerspectiveTransform(src, dst)
+        size = (int(np.ceil(dw)), h)
+        tile = cv2.warpPerspective(t, Hm, size, flags=cv2.INTER_LINEAR, borderValue=255)
+        mask = cv2.warpPerspective(np.full_like(t, 255), Hm, size, flags=cv2.INTER_NEAREST)
+        ink = cv2.perspectiveTransform(_ink_quad(t).reshape(-1, 1, 2), Hm).reshape(-1, 2)
+        prepared.append((tile, mask > 0, ink, c))
+    cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "gray", "-s", f"{CW}x{CH}",
+           "-r", str(fps), "-i", "-", "-c:v", "libx264", "-crf", "12", "-pix_fmt", "yuv420p", "-g", "30", str(path)]
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    truth = []
+    for i in range(n):
+        f = bg.copy()
+        k = i / max(n - 1, 1)
+        if hide and hide[0] <= i < hide[1]:
+            truth.append(None)
+        else:
+            row = []
+            for tile, m, ink, c in prepared:
+                x = round(c["start"][0] + (c["end"][0] - c["start"][0]) * k)
+                y = round(c["start"][1] + (c["end"][1] - c["start"][1]) * k)
+                region = f[y:y + tile.shape[0], x:x + tile.shape[1]]
+                region[m] = tile[m]
+                row.append(ink + np.float32([x, y]))
+            truth.append(row)
+        p.stdin.write(f.tobytes())
+    p.stdin.close()
+    assert p.wait() == 0
+    return truth

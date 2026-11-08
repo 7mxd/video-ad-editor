@@ -635,6 +635,60 @@ def _ranges_text(flagged):
     return "، ".join(f"هدف {r[2]}: {r[0]:.2f}-{r[1]:.2f}ث" for r in flagged)
 
 
+def _load_existing(args, meta, remark=False):
+    """Refuse to overwrite a filled blur.json unless --add/--target/--replace; with --add/--target load it
+    (and check it was made from this video). -> (old_frames, old_flagged, existing target ids)."""
+    old, old_flag = [], []
+    bj = Path(args.work) / "blur.json"
+    add = getattr(args, "add", False)
+    if not (add or remark or args.replace) and bj.exists() and load_json(args.work)[1]:
+        raise ValueError("blur.json فيه أهداف — هدف جديد: --add · تعديل هدف: --target رقمه · "
+                         "تبدأ من الصفر: --replace")
+    if (add or remark) and bj.exists():
+        old_meta, old, old_flag = load_json(args.work)
+        if any(old_meta.get(k) != meta[k] for k in ("n", "w", "h")) or old_meta.get("fps") is None                 or abs(float(old_meta["fps"]) - meta["fps"]) > 1e-3:
+            raise Mismatch("blur.json من فيديو ثاني — ما أقدر أضيف عليه")
+    return old, old_flag, {f.target for f in old}
+
+
+def _finish(work, meta, all_frames, all_flag):
+    save_json(work, meta, all_frames, all_flag)
+    print(summary(all_frames, all_flag))
+    if all_flag:
+        print(f"⛔ الهدف ضاع أكثر من ثانية: {_ranges_text(all_flag)} — حدّده من جديد "
+              f"(box … --target رقمه) أو apply --accept-band", file=sys.stderr)
+        return 3
+    return 0
+
+
+def _detect_cmd(args, meta):
+    import _detect
+    kinds = [k.strip().lower() for k in args.kinds.split(",") if k.strip()]
+    other = [k for k in kinds if k not in _detect.ROUTE_A]
+    if other or not kinds:
+        raise ValueError(f"ما أكشف «{'، '.join(other) or '—'}» بروحي (أعرف: {', '.join(_detect.ROUTE_A)}). "
+                         "غيرها بالطريق الثاني: keyframes ثم boxes (references/blur.md)")
+    old, old_flag, ids = _load_existing(args, meta)
+    fps = meta["fps"]
+    i0, i1 = _window(Path(args.video), args.t0, args.t1)
+    dets = _detect.scan(Path(args.video), set(kinds), i0, i1)
+    tracks = _detect.link(dets, fps, max(meta["w"], meta["h"]))
+    for k in kinds:
+        if not any(t["kind"] == k for t in tracks):
+            print(f"ما لقيت: {k}")
+    if not tracks:
+        return 0
+    all_frames, all_flag = old, old_flag
+    tid = max(ids) + 1 if (args.add and ids) else 0
+    for t in tracks:
+        frames = _detect.fill(Path(args.video), t["q"], i0, i1)
+        frames, flagged = apply_failsafe([replace(f, target=tid) for f in frames], fps)
+        all_frames, all_flag = merge_targets(all_frames, all_flag, frames, [(a, b, tid) for a, b in flagged],
+                                             tid, False, fps)
+        tid += 1
+    return _finish(args.work, meta, all_frames, all_flag)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="privacy blur: track → fail-safe → render → QA sheet")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -649,6 +703,14 @@ def main(argv=None):
         g.add_argument("--add", action="store_true", help="a new target, kept next to the ones in blur.json")
         g.add_argument("--target", type=int, default=None, help="re-mark this existing target")
         g.add_argument("--replace", action="store_true", help="start blur.json over, dropping its targets")
+    dt = sub.add_parser("detect", help="find qr / barcode by itself")
+    dt.add_argument("work"); dt.add_argument("video")
+    dt.add_argument("--kinds", required=True, help="comma list: qr,barcode")
+    dt.add_argument("--from", dest="t0", type=float, default=0)
+    dt.add_argument("--to", dest="t1", type=float, default=None)
+    g = dt.add_mutually_exclusive_group()
+    g.add_argument("--add", action="store_true", help="new targets, kept next to the ones in blur.json")
+    g.add_argument("--replace", action="store_true", help="start blur.json over, dropping its targets")
     a = sub.add_parser("apply")
     a.add_argument("work"); a.add_argument("video_in"); a.add_argument("video_out")
     a.add_argument("--accept-band", action="store_true")
@@ -674,24 +736,15 @@ def main(argv=None):
         if args.cmd in ("ref", "box"):
             meta = video_meta(args.video)
             fps = meta["fps"]
-            old, old_flag, tid, remark = [], [], 0, args.target is not None
-            bj = Path(args.work) / "blur.json"
-            if not (args.add or remark or args.replace) and bj.exists() and load_json(args.work)[1]:
-                raise ValueError("blur.json فيه أهداف — هدف جديد: --add · تعديل هدف: --target رقمه · "
-                                 "تبدأ من الصفر: --replace")
-            if args.add or remark:
-                if (Path(args.work) / "blur.json").exists():
-                    old_meta, old, old_flag = load_json(args.work)
-                    if any(old_meta.get(k) != meta[k] for k in ("n", "w", "h")) or old_meta.get("fps") is None \
-                            or abs(float(old_meta["fps"]) - fps) > 1e-3:
-                        raise Mismatch("blur.json من فيديو ثاني — ما أقدر أضيف عليه")
-                ids = {f.target for f in old}
-                if remark:
-                    if args.target not in ids:
-                        raise ValueError(f"ما فيه هدف رقم {args.target} بـblur.json (الموجود: {sorted(ids)})")
-                    tid = args.target
-                else:
-                    tid = max(ids) + 1 if ids else 0
+            remark = args.target is not None
+            old, old_flag, ids = _load_existing(args, meta, remark)
+            tid = 0
+            if remark:
+                if args.target not in ids:
+                    raise ValueError(f"ما فيه هدف رقم {args.target} بـblur.json (الموجود: {sorted(ids)})")
+                tid = args.target
+            elif args.add:
+                tid = max(ids) + 1 if ids else 0
             if args.cmd == "ref":
                 frames = track_reference(Path(args.video), Path(args.ref_img), tuple(_floats(args.region, 4)),
                                          args.t0, args.t1)
@@ -700,13 +753,9 @@ def main(argv=None):
             frames, flagged = apply_failsafe([replace(f, target=tid) for f in frames], fps)
             all_frames, all_flag = merge_targets(old, old_flag, frames, [(a_, b_, tid) for a_, b_ in flagged],
                                                  tid, remark, fps)
-            save_json(args.work, meta, all_frames, all_flag)
-            print(summary(all_frames, all_flag))
-            if all_flag:
-                print(f"⛔ الهدف ضاع أكثر من ثانية: {_ranges_text(all_flag)} — حدّده من جديد "
-                      f"(box … --target رقمه) أو apply --accept-band", file=sys.stderr)
-                return 3
-            return 0
+            return _finish(args.work, meta, all_frames, all_flag)
+        if args.cmd == "detect":
+            return _detect_cmd(args, video_meta(args.video))
         if args.cmd == "apply":
             meta, frames, flagged = load_json(args.work)
             check_video(meta, args.video_in)
