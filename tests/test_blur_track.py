@@ -305,3 +305,29 @@ def test_box_without_add_refuses_to_overwrite_targets(clips):
     r = run_cli("box", work, video, 1.5, box, "--replace")
     assert r.returncode == 0, r.stdout + r.stderr
     assert {f.target for f in bt.load_json(work)[1]} == {0}
+
+
+# ---- QA sheet: frames with no blur (Task 5) ----------------------------------------------------------------------
+def _first_half(n=90, upto=45):
+    poly = [(10, 10), (100, 10), (100, 60), (10, 60)]
+    return [bt.FrameBox(i, poly, 1.0, "tracked") for i in range(upto)]
+
+
+def test_qa_includes_outside_frames():
+    picks, outside = bt.qa_picks(_first_half(), 90, max_tiles=24, outside=6)
+    assert len(outside) == 6
+    assert all(45 <= i < 90 for i in outside)
+    assert set(outside) <= set(picks)
+
+
+def test_qa_outside_zero_matches_old(clips, tmp_path):
+    video, _ = clips["plain"]
+    frames = _first_half()
+    n_old = bt.qa_sheet(video, frames, tmp_path / "a.jpg", outside=0)
+    picks, outside = bt.qa_picks(frames, 90, max_tiles=24, outside=0)
+    assert outside == [] and n_old == len(picks) == 2
+
+
+def test_qa_sheet_draws_outside_tiles(clips, tmp_path):
+    video, _ = clips["plain"]
+    assert bt.qa_sheet(video, _first_half(), tmp_path / "q.jpg", outside=6) == 8

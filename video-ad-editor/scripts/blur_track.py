@@ -500,29 +500,47 @@ def render_blur(video_in, frames, video_out, strength=31, n_frames=None):
 
 
 # ---- QA sheet ----------------------------------------------------------------------------------------------------
-def qa_sheet(video, frames, out_jpg, max_tiles=24):
-    """One sheet: widened/held/lost frames + first and last frame of each window, 240-px tiles labelled with time."""
-    video, out_jpg = Path(video), Path(out_jpg)
-    w, h, fps, _ = probe(video)
-    polys = _by_frame(frames)
+def _spread(xs, n):
+    if n <= 0 or not xs:
+        return []
+    if len(xs) <= n:
+        return list(xs)
+    return [xs[round(j * (len(xs) - 1) / max(n - 1, 1))] for j in range(n)]
+
+
+def _states(frames):
     state = {}
     for f in frames:  # worst state wins when several targets share a frame
         if STATES.index(f.state) >= STATES.index(state.get(f.i, "tracked")):
             state[f.i] = f.state
+    return state
+
+
+def qa_picks(frames, n, max_tiles=24, outside=6):
+    """-> (sorted picks, outside picks). Outside = up to `outside` frames spread over indices with no polygon
+    (a missed item shows up there); then first/last frame of each window; then widened/held/lost frames."""
+    polys = _by_frame(frames)
+    state = _states(frames)
     edges = []
     for a, b in _ranges(polys):
         edges += [a] if a == b else [a, b]
     unsure = [i for i in sorted(state) if state[i] != "tracked" and i not in edges]
+    out = _spread([i for i in range(n) if i not in polys], min(outside, max_tiles))
+    picks = out + _spread(edges, max_tiles - len(out))
+    picks = sorted(set(picks + _spread(unsure, max_tiles - len(picks))))
+    return picks, out
 
-    def spread(xs, n):
-        if n <= 0 or not xs:
-            return []
-        if len(xs) <= n:
-            return list(xs)
-        return [xs[round(j * (len(xs) - 1) / max(n - 1, 1))] for j in range(n)]
 
-    picks = spread(edges, max_tiles)
-    picks = sorted(set(picks + spread(unsure, max_tiles - len(picks))))
+def qa_sheet(video, frames, out_jpg, max_tiles=24, outside=6, n=None):
+    """One sheet: frames with no blur ("clear") + first and last frame of each window + widened/held/lost
+    frames; 240-px tiles labelled with time and state."""
+    video, out_jpg = Path(video), Path(out_jpg)
+    w, h, fps, _ = probe(video)
+    polys = _by_frame(frames)
+    state = _states(frames)
+    if n is None:
+        n = count_frames(video, _probe(video)["rate"]) if outside > 0 else 0
+    picks, _ = qa_picks(frames, n, max_tiles, outside)
     if not picks:
         raise ValueError("nothing to show — blur.json has no frames")
     TW, TH, BAR = 240, 240, 22
@@ -547,7 +565,7 @@ def qa_sheet(video, frames, out_jpg, max_tiles=24):
         tile = np.full((TH + BAR, TW, 3), 40, np.uint8)
         oy, ox = BAR + (TH - img.shape[0]) // 2, (TW - img.shape[1]) // 2
         tile[oy:oy + img.shape[0], ox:ox + img.shape[1]] = img
-        st = state.get(i, "tracked")
+        st = state.get(i, "tracked") if i in polys else "clear"
         cv2.putText(tile, f"{i / fps:.2f}s {st}", (4, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                     (255, 255, 255) if st == "tracked" else (0, 200, 255), 1, cv2.LINE_AA)
         tiles.append(tile)
@@ -781,6 +799,7 @@ def main(argv=None):
     q = sub.add_parser("qa")
     q.add_argument("work"); q.add_argument("video"); q.add_argument("out")
     q.add_argument("--max-tiles", type=int, default=24)
+    q.add_argument("--outside", type=int, default=6, help="frames with no blur, to spot a missed item")
     args = ap.parse_args(argv)
     # blur.md runs from the skill folder with bare names (`box <work> cut.mp4 …`): those mean files in <work>
     for k in ("video", "video_in", "ref_img", "boxes"):
@@ -842,7 +861,7 @@ def main(argv=None):
             return 0
         meta, frames, _ = load_json(args.work)
         check_video(meta, args.video)
-        n = qa_sheet(Path(args.video), frames, Path(args.out), args.max_tiles)
+        n = qa_sheet(Path(args.video), frames, Path(args.out), args.max_tiles, args.outside, meta.get("n"))
         print(f"{args.out} · {n} لقطة")
         return 0
     except Mismatch as e:
