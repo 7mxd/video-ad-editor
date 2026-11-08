@@ -5,6 +5,7 @@ instance → fill the frames in between → blur_track's fail-safe / apply / qa,
 Route B (anything named in words) lives in keyframes/boxes (see references/blur.md).
 """
 import hashlib
+import json
 import os
 from pathlib import Path
 
@@ -229,3 +230,75 @@ def fill(video, track, i0, i1):
     lo, hi = min(L), max(L)
     return [bt.FrameBox(i, bt._plist(L[i][0]), round(float(L[i][1]), 3), "tracked") if i in L
             else bt.FrameBox(i, None, 0.0, "lost") for i in range(lo, hi + 1)]
+
+
+# ---- route B: keyframes for a subagent, its boxes seed the tracker ---------------------------------------------------
+CUT_DIST = 0.4        # Bhattacharyya distance between consecutive grey histograms that marks a scene cut
+
+
+def pick_keyframes(video, i0, i1, every_s=2.0, max_n=12):
+    """Frame indices to show the subagent: every `every_s` seconds plus each scene cut; none closer than 0.5 s
+    (cuts win); evenly thinned to max_n."""
+    video = Path(video)
+    info = bt._probe(video)
+    w, h, rate, fps = info["w"], info["h"], info["rate"], bt.probe(video)[2]
+    sw, sh = 160, max(round(160 * h / w), 1)
+    cuts, prev, last = [], None, i0
+    for i, g in bt.read_frames(video, w, h, rate=rate):
+        if i < i0 or (i1 is not None and i >= i1):
+            continue
+        last = i
+        hist = cv2.calcHist([cv2.resize(g, (sw, sh), interpolation=cv2.INTER_AREA)], [0], None, [64], [0, 256])
+        cv2.normalize(hist, hist)
+        if prev is not None and cv2.compareHist(prev, hist, cv2.HISTCMP_BHATTACHARYYA) > CUT_DIST:
+            cuts.append(i)
+        prev = hist
+    step = max(int(round(every_s * fps)), 1)
+    gap = int(round(0.5 * fps))
+    kept = []
+    for c in cuts + list(range(i0, last + 1, step)):
+        if all(abs(c - k) >= gap for k in kept):
+            kept.append(c)
+    kept.sort()
+    if len(kept) > max_n:
+        kept = [kept[round(j * (len(kept) - 1) / (max_n - 1))] for j in range(max_n)]
+    return kept
+
+
+def write_keyframes(video, work, idx, long_side=720):
+    """<work>/kf/kf_NN.jpg (long side <= long_side, never upscaled) + keyframes.json -> the kf folder."""
+    video, out = Path(video), Path(work) / "kf"
+    out.mkdir(parents=True, exist_ok=True)
+    for old in out.glob("kf_*.jpg"):
+        old.unlink()
+    w, h, fps, _ = bt.probe(video)
+    s = min(1.0, long_side / max(w, h))
+    frames = []
+    for n, (i, f) in enumerate(bt.read_frames(video, w, h, gray=False, select=sorted(idx))):
+        if s != 1:
+            f = cv2.resize(f, (max(round(w * s), 1), max(round(h * s), 1)), interpolation=cv2.INTER_AREA)
+        ok, enc = cv2.imencode(".jpg", f, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        if not ok:
+            raise RuntimeError("jpeg encode failed")
+        name = f"kf_{n:02d}.jpg"
+        enc.tofile(str(out / name))          # np.tofile: Arabic paths on Windows
+        frames.append({"t": round(i / fps, 3), "i": i, "file": name})
+    data = {"scale": s, "fps": fps, "frames": frames}
+    (out / "keyframes.json").write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    return out
+
+
+def track_anchors(video, anchors, t0=0, t1=None):
+    """One item marked on several keyframes: track_box from each (t, (x, y, w, h)) and keep, per frame, a found
+    polygon over a lost one and the higher confidence among found ones. Trimmed to the item's own span."""
+    best = {}
+    for t, box in anchors:
+        for f in bt.track_box(Path(video), t, box, t0, t1):
+            cur = best.get(f.i)
+            if cur is None or (cur.state == "lost" and f.state != "lost") \
+                    or (f.state != "lost" and cur.state != "lost" and f.conf > cur.conf):
+                best[f.i] = f
+    out = [best[i] for i in sorted(best)]
+    found = [k for k, f in enumerate(out) if f.state != "lost"]
+    # the item's own span only: before it first shows / after it last shows is not "lost" (same as route A)
+    return out[found[0]:found[-1] + 1] if found else out

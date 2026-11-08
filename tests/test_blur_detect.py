@@ -189,3 +189,117 @@ def test_face_plumbing(tmp_path, monkeypatch):
     _, frames, _ = bt.load_json(tmp_path)
     assert {f.target for f in frames if f.poly is not None} == {0}
     assert_all_covered(tmp_path, truth)
+
+
+# ---- route B: keyframes + boxes (Task 4) -------------------------------------------------------------------------
+from fixtures_blur import make_cut_video  # noqa: E402
+
+
+def keyframes(work, video, *extra):
+    r = run_cli("keyframes", work, video, *extra)
+    assert r.returncode == 0, r.stderr
+    return json.loads((Path(work) / "kf" / "keyframes.json").read_text(encoding="utf-8"))
+
+
+def write_boxes(path, items, not_found=()):
+    Path(path).write_text(json.dumps({"items": items, "not_found": list(not_found)}), encoding="utf-8")
+    return path
+
+
+def kf_box(quad, scale, pad=4):
+    x0, y0 = quad.min(0) - pad
+    x1, y1 = quad.max(0) + pad
+    return [float(x0 * scale), float(y0 * scale), float((x1 - x0) * scale), float((y1 - y0) * scale)]
+
+
+def test_keyframes_cap_and_cut(tmp_path):
+    video = tmp_path / "cut.mp4"
+    make_cut_video(video)
+    kf = keyframes(tmp_path, video)
+    idx = sorted(f["i"] for f in kf["frames"])
+    assert 1 <= len(idx) <= 12
+    assert any(abs(i - 45) <= 2 for i in idx), idx
+    assert all(b - a >= 15 for a, b in zip(idx, idx[1:])), idx
+
+
+def test_keyframes_arabic_path(vids, tmp_path):
+    video, _ = vids["qr"]
+    work = tmp_path / "عمل تجريبي"
+    kf = keyframes(work, video)
+    assert kf["frames"]
+    for f in kf["frames"]:
+        img = cv2.imdecode(np.fromfile(str(work / "kf" / f["file"]), np.uint8), cv2.IMREAD_COLOR)
+        assert img is not None and max(img.shape[:2]) <= 720
+
+
+def test_boxes_scale_back(vids, tmp_path):
+    video, truth = vids["qr"]
+    kf = keyframes(tmp_path, video)
+    assert kf["scale"] == pytest.approx(0.75)
+    f0 = kf["frames"][0]
+    bj = write_boxes(tmp_path / "b.json", [{"id": "code-1", "t": f0["t"], "box": kf_box(truth[f0["i"]][0], kf["scale"])}])
+    r = run_cli("boxes", tmp_path, video, bj)
+    assert r.returncode == 0, r.stderr
+    assert_all_covered(tmp_path, truth)
+
+
+def test_boxes_two_anchors_one_target(vids, tmp_path):
+    video, truth = vids["qr"]
+    kf = keyframes(tmp_path, video)
+    s = kf["scale"]
+    items = [{"id": "code-1", "t": t, "box": kf_box(truth[round(t * 30)][0], s)} for t in (0.5, 1.5)]
+    r = run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "b.json", items))
+    assert r.returncode == 0, r.stderr
+    _, frames, _ = bt.load_json(tmp_path)
+    assert {f.target for f in frames if f.poly is not None} == {0}
+    assert_all_covered(tmp_path, truth)
+
+
+def test_boxes_out_of_frame_clipped(vids, tmp_path):
+    video, truth = vids["qr"]
+    kf = keyframes(tmp_path, video)
+    s = kf["scale"]
+    x, y, w, h = kf_box(truth[30][0], s)
+    items = [{"id": "edge", "t": 1.0, "box": [x, y, 540 * s - x + 80, h]}]   # hangs 80 px past the right edge
+    r = run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "b.json", items))
+    assert r.returncode in (0, 3), r.stderr
+    _, frames, _ = bt.load_json(tmp_path)
+    anchor = [f for f in frames if f.i == 30 and f.poly is not None]
+    assert anchor and np.float32(anchor[0].poly)[:, 0].max() <= 540 + 1
+
+
+def test_boxes_bad_time_exit2(vids, tmp_path):
+    video, truth = vids["qr"]
+    kf = keyframes(tmp_path, video)
+    good = [{"id": "code-1", "t": 1.0, "box": kf_box(truth[30][0], kf["scale"])}]
+    assert run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "b.json", good)).returncode == 0
+    before = (tmp_path / "blur.json").read_bytes()
+    bad = [{"id": "late", "t": 99.0, "box": [10, 10, 50, 50]}]
+    r = run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "b2.json", bad), "--add")
+    assert r.returncode == 2
+    assert "late" in r.stderr
+    assert (tmp_path / "blur.json").read_bytes() == before
+
+
+def test_boxes_not_found_message(vids, tmp_path):
+    video, truth = vids["qr"]
+    kf = keyframes(tmp_path, video)
+    items = [{"id": "code-1", "t": 1.0, "box": kf_box(truth[30][0], kf["scale"])}]
+    r = run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "b.json", items, ["serial"]))
+    assert r.returncode == 0, r.stderr
+    assert "ما لقيت: serial" in r.stdout
+
+
+def test_boxes_item_in_part_of_video_not_flagged(tmp_path):
+    """An item that leaves the frame halfway is blurred while visible; the frames after it left are not 'lost'."""
+    from fixtures_blur import make_video
+    video = tmp_path / "leave.mp4"
+    truth = make_video(video, n=90, traj=lambda i, n: (40 + 12 * i, 120))   # off the right edge from ~frame 50
+    kf = keyframes(tmp_path, video)
+    x, y = 40 + 12 * 15, 120
+    items = [{"id": "patch", "t": 0.5, "box": [x * kf["scale"], y * kf["scale"], 200 * kf["scale"], 120 * kf["scale"]]}]
+    r = run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "b.json", items))
+    assert r.returncode == 0, r.stderr
+    _, _, flagged = bt.load_json(tmp_path)
+    assert flagged == []
+    assert truth[15] is not None

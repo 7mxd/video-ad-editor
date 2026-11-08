@@ -702,6 +702,45 @@ def _detect_cmd(args, meta):
     return _finish(args.work, meta, all_frames, all_flag)
 
 
+def _boxes_cmd(args, meta):
+    """boxes.json = {"items": [{"id", "t", "box": [x, y, w, h]}], "not_found": [names]}, in keyframe pixels."""
+    import _detect
+    kj = Path(args.work) / "kf" / "keyframes.json"
+    if not kj.exists():
+        raise ValueError("ما فيه kf/keyframes.json — شغّل keyframes أول")
+    scale = float(json.loads(kj.read_text(encoding="utf-8"))["scale"])
+    data = json.loads(Path(args.boxes).read_text(encoding="utf-8"))
+    fps, n, w, h = meta["fps"], meta["n"], meta["w"], meta["h"]
+    groups = {}
+    for it in data.get("items", []):
+        iid, t = str(it["id"]), float(it["t"])
+        x, y, bw, bh = (float(v) / scale for v in it["box"])
+        x0, y0, x1, y1 = max(x, 0), max(y, 0), min(x + bw, w), min(y + bh, h)
+        if not (0 <= round(t * fps) < n):
+            raise ValueError(f"{iid}: الوقت {t}ث برّا الفيديو (طوله {n / fps:.2f}ث)")
+        if x1 - x0 < 8 or y1 - y0 < 8:
+            raise ValueError(f"{iid}: المربع برّا الفريم أو صغير وايد")
+        groups.setdefault(iid, []).append((t, (x0, y0, x1 - x0, y1 - y0)))
+    old, old_flag, ids = _load_existing(args, meta)
+    for name in data.get("not_found", []):
+        print(f"ما لقيت: {name}")
+    if not groups:
+        return 0
+    all_frames, all_flag = old, old_flag
+    tid = max(ids) + 1 if (args.add and ids) else 0
+    for iid, anchors in groups.items():
+        try:
+            frames = _detect.track_anchors(Path(args.video), anchors)
+        except ValueError as e:
+            raise ValueError(f"{iid}: {e}") from e
+        frames, flagged = apply_failsafe([replace(f, target=tid) for f in frames], fps)
+        all_frames, all_flag = merge_targets(all_frames, all_flag, frames, [(a, b, tid) for a, b in flagged],
+                                             tid, False, fps)
+        print(f"هدف {tid} = {iid}")
+        tid += 1
+    return _finish(args.work, meta, all_frames, all_flag)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="privacy blur: track → fail-safe → render → QA sheet")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -724,6 +763,17 @@ def main(argv=None):
     g = dt.add_mutually_exclusive_group()
     g.add_argument("--add", action="store_true", help="new targets, kept next to the ones in blur.json")
     g.add_argument("--replace", action="store_true", help="start blur.json over, dropping its targets")
+    kf = sub.add_parser("keyframes", help="a few frames for a subagent to box items named in words")
+    kf.add_argument("work"); kf.add_argument("video")
+    kf.add_argument("--every", type=float, default=2.0)
+    kf.add_argument("--max", dest="max_n", type=int, default=12)
+    kf.add_argument("--from", dest="t0", type=float, default=0)
+    kf.add_argument("--to", dest="t1", type=float, default=None)
+    bx = sub.add_parser("boxes", help="the subagent's boxes.json -> one tracked target per id")
+    bx.add_argument("work"); bx.add_argument("video"); bx.add_argument("boxes")
+    g = bx.add_mutually_exclusive_group()
+    g.add_argument("--add", action="store_true", help="new targets, kept next to the ones in blur.json")
+    g.add_argument("--replace", action="store_true", help="start blur.json over, dropping its targets")
     a = sub.add_parser("apply")
     a.add_argument("work"); a.add_argument("video_in"); a.add_argument("video_out")
     a.add_argument("--accept-band", action="store_true")
@@ -733,7 +783,7 @@ def main(argv=None):
     q.add_argument("--max-tiles", type=int, default=24)
     args = ap.parse_args(argv)
     # blur.md runs from the skill folder with bare names (`box <work> cut.mp4 …`): those mean files in <work>
-    for k in ("video", "video_in", "ref_img"):
+    for k in ("video", "video_in", "ref_img", "boxes"):
         v = getattr(args, k, None)
         if v and not Path(v).is_absolute() and (Path(args.work) / v).exists():
             setattr(args, k, str(Path(args.work) / v))
@@ -769,6 +819,15 @@ def main(argv=None):
             return _finish(args.work, meta, all_frames, all_flag)
         if args.cmd == "detect":
             return _detect_cmd(args, video_meta(args.video))
+        if args.cmd == "keyframes":
+            import _detect
+            i0, i1 = _window(Path(args.video), args.t0, args.t1)
+            idx = _detect.pick_keyframes(Path(args.video), i0, i1, args.every, args.max_n)
+            out = _detect.write_keyframes(Path(args.video), Path(args.work), idx)
+            print(f"{len(idx)} لقطة → {out}")
+            return 0
+        if args.cmd == "boxes":
+            return _boxes_cmd(args, video_meta(args.video))
         if args.cmd == "apply":
             meta, frames, flagged = load_json(args.work)
             check_video(meta, args.video_in)

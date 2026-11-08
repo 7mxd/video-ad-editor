@@ -153,3 +153,25 @@ def make_code_video(path, codes, n=60, fps=30, hide=None):
     p.stdin.close()
     assert p.wait() == 0
     return truth
+
+
+def make_cut_video(path, n=90, fps=30, cut=45):
+    """Two different shots joined at frame `cut`: grey with the noise patch, then a bright striped scene."""
+    path = Path(path)
+    tex = patch()
+    cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}",
+           "-r", str(fps), "-i", "-", "-c:v", "libx264", "-crf", "12", "-pix_fmt", "yuv420p", "-g", "30", str(path)]
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    stripes = np.zeros((H, W, 3), np.uint8)
+    stripes[:, ::40] = 230
+    stripes = cv2.blur(stripes, (15, 1)) + 20
+    for i in range(n):
+        if i < cut:
+            f = np.full((H, W, 3), GREY, np.uint8)
+            x, y = linear(i, n)
+            f[y:y + PH, x:x + PW] = tex
+        else:
+            f = np.roll(stripes, 2 * i, axis=1)
+        p.stdin.write(f.tobytes())
+    p.stdin.close()
+    assert p.wait() == 0
