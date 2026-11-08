@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0 — 2026-11-08
+
+### Added
+
+- **Auto-detect blur:** `blur_track.py detect --kinds qr,barcode,face` finds QR codes, barcodes and faces by itself (built-in OpenCV detectors; faces use the 0.2 MB YuNet model fetched by `00_setup.sh --extras`, pinned in `checksums.txt`). Each instance is its own target; barcode boxes are measured from the bars, since the detector's own box is rough.
+- **Anything named in words:** `keyframes` exports up to 12 frames (every ~2 s plus scene cuts); a subagent returns boxes as JSON; `boxes` tracks each item through the video.
+- **QA sheet shows clear frames:** up to 6 frames with no blur are added, so an item the detector missed is visible in the one review.
+
 ## 1.0.0 — 2026-11-05
 
 First release of this rebuild, based on upstream 6.3.0, commit a69492d ([majedphotos/video-ad-editor](https://github.com/majedphotos/video-ad-editor) by Majed Alzaabi, MIT). Finding numbers refer to [docs/AUDIT.md](docs/AUDIT.md) §3.

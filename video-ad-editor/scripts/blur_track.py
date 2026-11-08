@@ -5,6 +5,8 @@
    python scripts/blur_track.py box <work> <video> <t> x,y,w,h [--from T --to T] [--add | --target ID]
         ← مربع بالبكسل على فريم الثانية t، ويتتبّعه قدّام وورا
         --add هدف جديد (رقم جديد) · --target ID تحديد من جديد لنفس الهدف (يشيل مداه المفقود لو غطّاه كامل)
+   python scripts/blur_track.py detect <work> <video> --kinds qr,barcode,face [--from T --to T] [--add | --replace]
+        ← كشف تلقائي بلا تحديد (_detect.py)؛ غيرها: keyframes <work> <video> ← subagent ← boxes <work> <video> boxes.json
    python scripts/blur_track.py apply <work> <video_in> <video_out> [--accept-band]
    python scripts/blur_track.py qa <work> <video> <out.jpg>        ← ورقة وحدة: الفريمات غير المؤكدة + أطراف كل نافذة
    ref/box يطبعون سطر واحد «نوافذ N · فريمات M · غير مؤكد K · مفقود>1ث R» (للملف كله) ويطلعون بـ3 لو R > 0.
