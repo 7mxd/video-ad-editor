@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.1 — 2026-11-09
+
+### Fixed
+
+- **Text at the edge of a box stayed readable:** route B boxes (`keyframes` → `boxes`) grow on every side by the largest of 6 px, 0.35 × the box's short side and 0.04 × its long side, following the tracked perspective. A box drawn tight to the text no longer leaves the first or last characters sharp. The subagent prompt in `references/blur.md` asks for a margin on all sides.
+- **One soft keyframe stopped the whole item:** when a keyframe is too blurred to track from (too few features), `boxes` drops that anchor, prints a note and tracks the item from its other anchors. It still exits 2 when no anchor is usable.
+- **Malformed `boxes.json`:** exits 2 with one Arabic line naming the bad field (`id`, `t`, `box`, `items`, `not_found`) instead of a Python traceback.
+- **`--replace` that finds nothing:** `boxes` and `detect` now refuse (exit 2) and say the old `blur.json` was kept, instead of silently leaving the old targets in place.
+- **Stale keyframes:** `kf/keyframes.json` stores the video's width, height, fps and frame count; `boxes` refuses (exit 3, as `apply` and `qa` do) when the video does not match.
+- **Docs:** `references/blur.md` names `<work>/kf/keyframes.json` everywhere.
+
 ## 1.1.0 — 2026-11-08
 
 ### Added

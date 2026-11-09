@@ -1,6 +1,6 @@
-# Status — 2026-11-06
+# Status — 2026-11-09
 
-Version 1.0.0 on branch `rebuild`, based on upstream 6.3.0 (commit a69492d). Public repo: https://github.com/7mxd/video-ad-editor
+Version 1.1.1 on branch `rebuild`, based on upstream 6.3.0 (commit a69492d). Public repo: https://github.com/7mxd/video-ad-editor
 
 ## Current state
 
@@ -102,6 +102,17 @@ The probed rate was 30/1, and the 813 frames match ffprobe's count.
 
 (The full run log lives in a local, git-excluded working note and is not part of the repo.)
 
+## 1.1.1 real-clip check (2026-11-09)
+
+**Sample.** A 15 s phone clip (4K HDR, HLG, 60 fps) of a graded coin in a slab, converted to SDR 1080×1920 at 30 fps (`zscale` + `tonemap=hable`). Hidden: the slab's certificate number and its barcode. Not in the repo.
+
+Stages: convert 34 s · `detect --kinds barcode` 14 s · `keyframes` 3 s (8 frames) · subagent boxes · `boxes --add` 57 s · `apply --strength 61` 6 s · `qa` 1 s.
+
+- The certificate number is blurred past both ends on every frame (the 1.1.0 run left the first digits readable at the left edge).
+- One keyframe was motion-blurred (too few features); `boxes` now tracks from the other anchors and prints a note instead of exiting 2.
+- The barcode detector put its box on a glare patch for about 2 s; one repair round (`boxes --add` with the barcode named) covered it.
+- Subagent QA: OK. Owner review: pass. No certificate digit readable, but the blur is wider than needed: the grade line just above the number is blurred in most frames (the subagent box already has a margin and the script adds another), and right after the soft keyframe a thin sliver of the digits' tops shows. Tuning the vertical margin is the next fix.
+
 ## Verified
 
 - Full test suite (`python -m pytest -q`): unit tests for token measurement, studio auth, fonts, transcription wrapper, series and lessons, approach choice, blur tracking, plus repo hygiene (removed paths, no dead script references, no `python3` calls, no upstream promo, attribution).
@@ -120,7 +131,7 @@ The probed rate was 30/1, and the 813 frames match ffprobe's count.
 
 - **Studio `--lan`:** every path needs the token (a cookie after the first visit) and there is no directory listing, but the share link carries the full-power token: anyone you send it to can edit and render. Default (`127.0.0.1`) accepts POST only from `127.0.0.1`/`localhost`.
 - **Beat detection has no confidence score:** a clip with ambient audio can be offered a beat montage it does not suit. Pick the voice or plain montage instead.
-- **Blur:** tested on synthetic footage and one real clip (the end-to-end run). No automatic face or plate detection: you mark the target, and a flat, featureless target (a dark TV screen) is refused as "not enough detail".
+- **Blur:** tested on synthetic footage and two real clips. Auto-detect covers QR codes, barcodes and faces only; anything else goes through keyframes and a subagent. The barcode detector can lock onto glare on a glossy label: check the QA sheet and run one repair round. A flat, featureless target (a dark TV screen) is refused as "not enough detail".
 - **Mac-only features stay Mac-only on Windows:** person cut-out (text behind the person, the three cut styles, collage, backdrop, "head out of the card" podcast scenes), hand tracking, gallery face tracking (`36`) and the HDR converter. Setup lists them at step 0. On Windows a landscape source is cropped from the centre and the head-crop step (23) keeps `faceAnchor`: fix the crop by hand in `shots.json` and `cardTop` in `studio.json`. Podcast face tracking on Windows uses OpenCV Haar: less accurate than Vision, and its mouth signal is a contrast proxy, not a lip measurement. It has not been checked on a real multi-cam session.
 - Static pages (onboarding, studio share/mobile, the moves gallery) still load fonts from Google; rendering does not.
 - On Linux without `/Applications` (or with `CLAUDE_SANDBOX` set), setup sends one `curl -I` to the Whisper model host to tell a sandbox with no internet from a normal machine.
