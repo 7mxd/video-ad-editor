@@ -30,6 +30,7 @@ pulls numpy 2 and breaks torch/whisper; numpy must stay 1.26.x). 00_setup.sh --e
 """
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
@@ -66,6 +67,10 @@ TPL_MIN_SCORE = 0.6
 
 class Mismatch(Exception):
     """blur.json was made from a different video."""
+
+
+class WeakTemplate(ValueError):
+    """The marked region has too few features to track (blurred, flat, or tiny)."""
 
 
 @dataclass
@@ -213,7 +218,7 @@ class _Matcher:
         self.bf = cv2.BFMatcher(cv2.NORM_L2)
         self.kp, self.des = self.sift.detectAndCompute(tpl_gray, None)
         if self.des is None or len(self.kp) < MIN_GOOD:
-            raise ValueError("المرجع ما فيه تفاصيل كافية للتتبّع — كبّر المنطقة أو استخدم صورة أوضح")
+            raise WeakTemplate("المرجع ما فيه تفاصيل كافية للتتبّع — كبّر المنطقة أو استخدم صورة أوضح")
         self.poly = np.float32(tpl_poly).reshape(-1, 1, 2)
         q = self.poly.reshape(-1, 2)
         self.aspect = np.linalg.norm(q[1] - q[0]) / max(np.linalg.norm(q[3] - q[0]), 1e-6)
@@ -722,7 +727,7 @@ def _detect_cmd(args, meta):
         if not any(t["kind"] == k for t in tracks):
             print(f"ما لقيت: {k}")
     if not tracks:
-        return 0
+        return _nothing_found(args)
     all_frames, all_flag = old, old_flag
     tid = max(ids) + 1 if (args.add and ids) else 0
     for t in tracks:
@@ -734,19 +739,66 @@ def _detect_cmd(args, meta):
     return _finish(args.work, meta, all_frames, all_flag)
 
 
+def _read_boxes(path):
+    """boxes.json -> {"items": [(id, t, [x, y, w, h])], "not_found": [names]}; ValueError names the bad field."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise ValueError(f"boxes.json مو JSON صحيح (سطر {e.lineno}، عمود {e.colno})") from None
+    if not isinstance(data, dict):
+        raise ValueError("boxes.json لازم يكون {\"items\": […], \"not_found\": […]} — الحقل «items» ناقص")
+    items, nf = data.get("items", []), data.get("not_found", [])
+    if not isinstance(items, list):
+        raise ValueError("boxes.json: الحقل «items» لازم يكون قائمة")
+    if not isinstance(nf, list):
+        raise ValueError("boxes.json: الحقل «not_found» لازم يكون قائمة")
+    out = []
+    for k, it in enumerate(items):
+        where = f"boxes.json: العنصر {k + 1}"
+        if not isinstance(it, dict):
+            raise ValueError(f"{where} لازم يكون {{\"id\", \"t\", \"box\"}} — الحقل «id» ناقص")
+        if it.get("id") in (None, ""):
+            raise ValueError(f"{where}: الحقل «id» ناقص")
+        where = f"boxes.json: «{it['id']}»"
+        t = it.get("t")
+        if isinstance(t, bool) or not isinstance(t, (int, float)) or not math.isfinite(t):
+            raise ValueError(f"{where}: الحقل «t» ناقص أو مو رقم (الوقت بالثواني)")
+        box = it.get("box")
+        if not isinstance(box, list) or len(box) != 4                 or not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in box):
+            raise ValueError(f"{where}: الحقل «box» لازم يكون [x, y, w, h] — أربعة أرقام")
+        out.append((str(it["id"]), float(t), [float(v) for v in box]))
+    return {"items": out, "not_found": [str(x) for x in nf]}
+
+
+def _nothing_found(args):
+    """--replace that found nothing: refuse instead of silently keeping the old targets."""
+    if getattr(args, "replace", False) and (Path(args.work) / "blur.json").exists() and load_json(args.work)[1]:
+        raise ValueError("ما لقيت شي، فـ--replace ما سوّى شي: blur.json القديم باقي بأهدافه — "
+                         "شيله بنفسك لو تبي تبدأ من الصفر، أو جرّب تحديد ثاني")
+    return 0
+
+
 def _boxes_cmd(args, meta):
     """boxes.json = {"items": [{"id", "t", "box": [x, y, w, h]}], "not_found": [names]}, in keyframe pixels."""
     import _detect
     kj = Path(args.work) / "kf" / "keyframes.json"
     if not kj.exists():
         raise ValueError("ما فيه kf/keyframes.json — شغّل keyframes أول")
-    scale = float(json.loads(kj.read_text(encoding="utf-8"))["scale"])
-    data = json.loads(Path(args.boxes).read_text(encoding="utf-8"))
+    kd = json.loads(kj.read_text(encoding="utf-8"))
+    if any(k not in kd for k in ("w", "h", "n", "fps")):
+        raise Mismatch("kf/keyframes.json من نسخة قديمة (ما فيه مقاس الفيديو) — شغّل keyframes على هالفيديو من جديد")
+    bad = [k for k in ("w", "h", "n") if kd.get(k) != meta[k]]
+    if kd.get("fps") is None or abs(float(kd["fps"]) - meta["fps"]) > 1e-3:
+        bad.append("fps")
+    if bad:
+        raise Mismatch(f"kf/keyframes.json من فيديو ثاني ({', '.join(f'{k}: {kd.get(k)} ≠ {meta[k]}' for k in bad)})"
+                       " — شغّل keyframes على هالفيديو من جديد")
+    scale = float(kd["scale"])
+    data = _read_boxes(args.boxes)
     fps, n, w, h = meta["fps"], meta["n"], meta["w"], meta["h"]
     groups = {}
-    for it in data.get("items", []):
-        iid, t = str(it["id"]), float(it["t"])
-        x, y, bw, bh = (float(v) / scale for v in it["box"])
+    for iid, t, box in data["items"]:
+        x, y, bw, bh = (v / scale for v in box)
         x0, y0, x1, y1 = max(x, 0), max(y, 0), min(x + bw, w), min(y + bh, h)
         if not (0 <= round(t * fps) < n):
             raise ValueError(f"{iid}: الوقت {t}ث برّا الفيديو (طوله {n / fps:.2f}ث)")
@@ -754,10 +806,10 @@ def _boxes_cmd(args, meta):
             raise ValueError(f"{iid}: المربع برّا الفريم أو صغير وايد")
         groups.setdefault(iid, []).append((t, (x0, y0, x1 - x0, y1 - y0)))
     old, old_flag, ids = _load_existing(args, meta)
-    for name in data.get("not_found", []):
+    for name in data["not_found"]:
         print(f"ما لقيت: {name}")
     if not groups:
-        return 0
+        return _nothing_found(args)
     all_frames, all_flag = old, old_flag
     tid = max(ids) + 1 if (args.add and ids) else 0
     for iid, anchors in groups.items():

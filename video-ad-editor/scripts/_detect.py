@@ -23,6 +23,9 @@ FACE_GROW = 1.2       # hair, ears and chin sit outside the detector's box
 GROW = 1.1            # detector quads hug the ink; blur a little past it
 BAR_SHORT = 1.3       # after refinement: room for the digits printed under the bars
 DUP_IOU = 0.5         # same code found at two scales
+BOX_PAD_MIN = 6       # route B: a subagent's box hugs the text, so every side grows by the largest of
+BOX_PAD_SHORT = 0.35  #   6 px, 0.35 x the box's short side, 0.04 x its long side (in video pixels)
+BOX_PAD_LONG = 0.04
 
 
 _DET = {}
@@ -300,21 +303,61 @@ def write_keyframes(video, work, idx, long_side=720):
         name = f"kf_{n:02d}.jpg"
         enc.tofile(str(out / name))          # np.tofile: Arabic paths on Windows
         frames.append({"t": round(i / fps, 3), "i": i, "file": name})
-    data = {"scale": s, "fps": fps, "frames": frames}
+    data = {"scale": s, "fps": fps, "w": w, "h": h, "n": bt.count_frames(video), "frames": frames}
     (out / "keyframes.json").write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     return out
 
 
-def track_anchors(video, anchors, t0=0, t1=None):
+def box_margin(bw, bh):
+    """Pixels added on every side of a route-B box (see BOX_PAD_*)."""
+    return max(BOX_PAD_MIN, BOX_PAD_SHORT * min(bw, bh), BOX_PAD_LONG * max(bw, bh))
+
+
+def pad_quad(q, bw, bh, m):
+    """Grow a tracked quad of a (bw x bh) box by m box-pixels on every side: the padded box goes through the
+    same homography that maps the box onto the quad, so the far side of a tilted item gets its margin too."""
+    q = np.asarray(q, np.float32).reshape(4, 2)
+    rect = np.float32([(0, 0), (bw, 0), (bw, bh), (0, bh)])
+    H = cv2.getPerspectiveTransform(rect, q)
+    big = np.float32([(-m, -m), (bw + m, -m), (bw + m, bh + m), (-m, bh + m)]).reshape(-1, 1, 2)
+    return cv2.perspectiveTransform(big, H).reshape(-1, 2)
+
+
+def track_anchors(video, anchors, t0=0, t1=None, pad=True):
     """One item marked on several keyframes: track_box from each (t, (x, y, w, h)) and keep, per frame, a found
-    polygon over a lost one and the higher confidence among found ones. Trimmed to the item's own span."""
-    best = {}
+    polygon over a lost one and the higher confidence among found ones. Trimmed to the item's own span.
+    pad: grow each polygon by box_margin() of its anchor box (the box is tracked tight, the blur reaches past it)."""
     anchors = sorted({t: box for t, box in reversed(anchors)}.items())   # one anchor per time, in order
+    cache = {}                                                           # (t, from, to) -> track
+    while True:
+        try:
+            return _track_anchors(video, anchors, t0, t1, pad, cache)
+        except bt.WeakTemplate as e:
+            # a soft keyframe (motion blur) has too few features: track from the other anchors instead
+            bad = getattr(e, "t", None)
+            if len(anchors) == 1 or bad is None:
+                raise
+            print(f"⚠️ لقطة {bad}ث ضبابية وما تنفع مرجع — أتتبّع من اللقطات الثانية")
+            anchors = [a for a in anchors if a[0] != bad]
+
+
+def _track_anchors(video, anchors, t0, t1, pad, cache):
+    best = {}
     for k, (t, box) in enumerate(anchors):
         # each anchor covers up to its neighbours only: SIFT runs ~2x the item's span, not once per anchor
         a = max(t0, anchors[k - 1][0]) if k else t0
         b = anchors[k + 1][0] if k + 1 < len(anchors) else t1
-        for f in bt.track_box(Path(video), t, box, a, b):
+        m = box_margin(box[2], box[3]) if pad else 0
+        if (t, a, b) not in cache:
+            try:
+                cache[(t, a, b)] = bt.track_box(Path(video), t, box, a, b)
+            except bt.WeakTemplate as e:
+                e.t = t                                                  # which anchor, for the retry
+                raise
+        track = cache[(t, a, b)]
+        for f in track:
+            if m and f.poly is not None:
+                f = bt.replace(f, poly=bt._plist(pad_quad(f.poly, box[2], box[3], m)))
             cur = best.get(f.i)
             if cur is None or (cur.state == "lost" and f.state != "lost") \
                     or (f.state != "lost" and cur.state != "lost" and f.conf > cur.conf):

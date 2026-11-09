@@ -175,3 +175,21 @@ def make_cut_video(path, n=90, fps=30, cut=45):
         p.stdin.write(f.tobytes())
     p.stdin.close()
     assert p.wait() == 0
+
+
+def text_tile(text="2886 0417 5531", scale=1.1, thick=3, pad=(30, 26)):
+    """A white card with one line of black digits (like a serial on a slab label), plus a frame line around it."""
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    (tw, th), base = cv2.getTextSize(text, font, scale, thick)
+    t = np.full((th + base + 2 * pad[1], tw + 2 * pad[0]), 255, np.uint8)
+    cv2.putText(t, text, (pad[0], pad[1] + th), font, scale, 0, thick, cv2.LINE_AA)
+    cv2.rectangle(t, (4, 4), (t.shape[1] - 5, t.shape[0] - 5), 90, 2)
+    return t
+
+
+def text_ink_quad(tile, inset=8):
+    """Bounding box of the digits only (the frame line is ignored)."""
+    core = tile[inset:-inset, inset:-inset]
+    ys, xs = np.nonzero(core < 128)
+    x0, y0, x1, y1 = xs.min() + inset, ys.min() + inset, xs.max() + 1 + inset, ys.max() + 1 + inset
+    return np.float32([(x0, y0), (x1, y0), (x1, y1), (x0, y1)])

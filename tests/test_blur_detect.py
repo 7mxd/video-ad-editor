@@ -265,7 +265,8 @@ def test_boxes_out_of_frame_clipped(vids, tmp_path):
     assert r.returncode in (0, 3), r.stderr
     _, frames, _ = bt.load_json(tmp_path)
     anchor = [f for f in frames if f.i == 30 and f.poly is not None]
-    assert anchor and np.float32(anchor[0].poly)[:, 0].max() <= 540 + 1
+    bw, bh = 540 - x / s, h / s                                   # the box after clipping to the frame
+    assert anchor and np.float32(anchor[0].poly)[:, 0].max() <= 540 + _detect.box_margin(bw, bh) + 1
 
 
 def test_boxes_bad_time_exit2(vids, tmp_path):
@@ -357,3 +358,168 @@ def test_face_model_arabic_home(tmp_path, monkeypatch):
     assert model is not None
     _detect._DET.clear()
     assert _detect.find_faces(np.full((240, 320, 3), 128, np.uint8), model) == []
+
+
+# ---- v1.1.1: a tight box must still blur past the text ends ------------------------------------------------------
+def test_boxes_tight_text_box_gets_margin(tmp_path):
+    """The subagent boxes the digits tight to the ink: the blur must still reach past both text ends on every
+    frame (real clip: the first digits of a cert number stayed readable at the left edge of the box)."""
+    from fixtures_blur import text_ink_quad, text_tile
+    tile = text_tile()
+    ink = text_ink_quad(tile)
+    video = tmp_path / "cert.mp4"
+    truth = make_code_video(video, [{"tile": tile, "start": (20, 300), "end": (90, 420)}])
+    off = [np.float32(row[0]).min(0) - _ink_quad_of(tile).min(0) for row in truth]   # tile placement per frame
+    kf = keyframes(tmp_path, video)
+    f0 = kf["frames"][0]
+    box = kf_box(ink + off[f0["i"]], kf["scale"], pad=0)                             # tight: no pad at all
+    r = run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "b.json", [{"id": "cert", "t": f0["t"], "box": box}]))
+    assert r.returncode == 0, r.stderr
+    hgt = float(ink[2, 1] - ink[0, 1])
+    m = max(4.0, 0.2 * hgt)                                                          # required reach past the ink
+    need = [ink + off[i] + np.float32([(-m, -m), (m, -m), (m, m), (-m, m)]) for i in range(len(truth))]
+    assert_all_covered(tmp_path, [[q] for q in need])
+
+
+def _ink_quad_of(tile):
+    from fixtures_blur import _ink_quad
+    return _ink_quad(tile)
+
+
+# ---- v1.1.1 minors -----------------------------------------------------------------------------------------------
+@pytest.mark.parametrize("item, field", [({"id": "x", "t": 1.0}, "box"),
+                                         ({"id": "x", "t": 1.0, "box": [1, 2, 3]}, "box"),
+                                         ({"id": "x", "t": "late", "box": [10, 10, 50, 50]}, "t"),
+                                         ({"t": 1.0, "box": [10, 10, 50, 50]}, "id"),
+                                         ({"id": "x", "t": 1e400, "box": [10, 10, 50, 50]}, "t"),
+                                         ({"id": "x", "t": 1.0, "box": "1234"}, "box"),
+                                         ({"id": "x", "t": 1.0, "box": [10, float("nan"), 50, 50]}, "box")])
+def test_boxes_malformed_exit2_names_field(vids, tmp_path, item, field):
+    video, _ = vids["qr"]
+    keyframes(tmp_path, video)
+    r = run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "b.json", [item]))
+    assert r.returncode == 2, r.stderr
+    lines = [ln for ln in r.stderr.splitlines() if ln.strip()]
+    assert len(lines) == 1 and "Traceback" not in r.stderr, r.stderr
+    assert f"«{field}»" in lines[0] and "⛔" in lines[0], lines[0]
+
+
+def test_boxes_not_json_exit2(vids, tmp_path):
+    video, _ = vids["qr"]
+    keyframes(tmp_path, video)
+    bj = tmp_path / "b.json"
+    bj.write_text('{"items": [', encoding="utf-8")
+    r = run_cli("boxes", tmp_path, video, bj)
+    assert r.returncode == 2 and "Traceback" not in r.stderr, r.stderr
+    assert len([ln for ln in r.stderr.splitlines() if ln.strip()]) == 1
+
+
+def test_replace_with_nothing_found_refuses(vids, tmp_path):
+    """--replace that finds nothing must not silently leave the old targets in blur.json."""
+    video, truth = vids["qr"]
+    kf = keyframes(tmp_path, video)
+    good = [{"id": "code-1", "t": 1.0, "box": kf_box(truth[30][0], kf["scale"])}]
+    assert run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "b.json", good)).returncode == 0
+    before = (tmp_path / "blur.json").read_bytes()
+    r = run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "e.json", [], ["serial"]), "--replace")
+    assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
+    assert "--replace" in r.stderr and "blur.json" in r.stderr
+    assert (tmp_path / "blur.json").read_bytes() == before
+    r = run_cli("detect", tmp_path, video, "--kinds", "barcode", "--replace")
+    assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
+    assert (tmp_path / "blur.json").read_bytes() == before
+
+
+def test_boxes_refuses_keyframes_of_other_video(vids, tmp_path):
+    video, truth = vids["qr"]
+    other, _ = vids["none"]
+    kf = keyframes(tmp_path, video)
+    assert {k: kf[k] for k in ("w", "h", "n")} == {"w": 540, "h": 960, "n": 60} and kf["fps"] == pytest.approx(30)
+    items = [{"id": "code-1", "t": 1.0, "box": kf_box(truth[30][0], kf["scale"])}]
+    data = json.loads((tmp_path / "kf" / "keyframes.json").read_text(encoding="utf-8"))
+    data["n"] = 59                                           # keyframes taken from a different cut
+    (tmp_path / "kf" / "keyframes.json").write_text(json.dumps(data), encoding="utf-8")
+    r = run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "b.json", items))
+    assert r.returncode == 3, (r.returncode, r.stderr)
+    assert "keyframes" in r.stderr
+    assert not (tmp_path / "blur.json").exists()
+
+
+def test_blur_md_keyframes_path():
+    md = (SCRIPTS.parent / "references" / "blur.md").read_text(encoding="utf-8")
+    import re
+    bare = [m.start() for m in re.finditer(r"keyframes\.json", md) if not md[:m.start()].endswith("<work>/kf/")]
+    assert md.count("<work>/kf/keyframes.json") >= 1 and not bare, bare
+
+
+def test_track_anchors_skips_weak_anchor(monkeypatch, capsys):
+    """One keyframe is motion-blurred (too few features): the item is tracked from the other anchors, with a note."""
+    calls = []
+
+    def fake(video, t, box, t0=0, t1=None):
+        if t == 1.5:
+            raise bt.WeakTemplate("المرجع ما فيه تفاصيل كافية للتتبّع")
+        calls.append((t, t0, t1))
+        return [bt.FrameBox(round(t * 30), [(0, 0), (9, 0), (9, 9), (0, 9)], 1.0, "tracked")]
+
+    monkeypatch.setattr(bt, "track_box", fake)
+    out = _detect.track_anchors(Path("v.mp4"), [(0.5, (0, 0, 9, 9)), (1.5, (0, 0, 9, 9)), (2.5, (0, 0, 9, 9))])
+    assert sorted(calls[-2:]) == [(0.5, 0, 2.5), (2.5, 0.5, None)]  # retry: windows rebuilt without the weak one
+    assert [f.i for f in out] == [15, 75]
+    assert "1.5" in capsys.readouterr().out
+
+
+def test_track_anchors_all_weak_raises(monkeypatch):
+    def fake(video, t, box, t0=0, t1=None):
+        raise bt.WeakTemplate("المرجع ما فيه تفاصيل كافية للتتبّع")
+
+    monkeypatch.setattr(bt, "track_box", fake)
+    with pytest.raises(ValueError):
+        _detect.track_anchors(Path("v.mp4"), [(0.5, (0, 0, 9, 9)), (1.5, (0, 0, 9, 9))])
+
+
+def test_track_anchors_single_weak_clean_message(monkeypatch):
+    def fake(video, t, box, t0=0, t1=None):
+        raise bt.WeakTemplate("المرجع ما فيه تفاصيل كافية للتتبّع")
+
+    monkeypatch.setattr(bt, "track_box", fake)
+    with pytest.raises(bt.WeakTemplate) as e:
+        _detect.track_anchors(Path("v.mp4"), [(0.5, (0, 0, 9, 9))])
+    assert str(e.value) == "المرجع ما فيه تفاصيل كافية للتتبّع"
+
+
+def test_track_anchors_retry_reuses_good_tracks(monkeypatch):
+    calls = []
+
+    def fake(video, t, box, t0=0, t1=None):
+        calls.append((t, t0, t1))
+        if t == 3.5:
+            raise bt.WeakTemplate("weak")
+        return [bt.FrameBox(round(t * 30), [(0, 0), (9, 0), (9, 9), (0, 9)], 1.0, "tracked")]
+
+    monkeypatch.setattr(bt, "track_box", fake)
+    _detect.track_anchors(Path("v.mp4"), [(t, (0, 0, 9, 9)) for t in (0.5, 1.5, 2.5, 3.5)])
+    assert calls.count((0.5, 0, 1.5)) == 1 and calls.count((1.5, 0.5, 2.5)) == 1, calls
+
+
+def test_boxes_old_keyframes_format_message(vids, tmp_path):
+    video, truth = vids["qr"]
+    kf = keyframes(tmp_path, video)
+    data = json.loads((tmp_path / "kf" / "keyframes.json").read_text(encoding="utf-8"))
+    for k in ("w", "h", "n"):
+        del data[k]                                          # written by 1.1.0
+    (tmp_path / "kf" / "keyframes.json").write_text(json.dumps(data), encoding="utf-8")
+    items = [{"id": "code-1", "t": 1.0, "box": kf_box(truth[30][0], kf["scale"])}]
+    r = run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "b.json", items))
+    assert r.returncode == 3 and "None" not in r.stderr and "keyframes" in r.stderr, r.stderr
+
+
+def test_pad_quad_follows_perspective():
+    """A box seen in strong perspective: the padded quad is the padded box through the same homography."""
+    bw, bh, m = 200.0, 40.0, 12.0
+    rect = np.float32([(0, 0), (bw, 0), (bw, bh), (0, bh)])
+    quad = np.float32([(100, 100), (300, 140), (300, 170), (100, 160)])
+    H = cv2.getPerspectiveTransform(rect, quad)
+    want = cv2.perspectiveTransform(np.float32([(-m, -m), (bw + m, -m), (bw + m, bh + m), (-m, bh + m)])
+                                    .reshape(-1, 1, 2), H).reshape(-1, 2)
+    assert np.allclose(_detect.pad_quad(quad, bw, bh, m), want, atol=0.5)
