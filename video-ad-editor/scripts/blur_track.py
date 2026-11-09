@@ -812,9 +812,14 @@ def _boxes_cmd(args, meta):
         return _nothing_found(args)
     all_frames, all_flag = old, old_flag
     tid = max(ids) + 1 if (args.add and ids) else 0
+    want = sorted({round(t * fps) for a in groups.values() for t, _ in a})
+    imgs = dict(read_frames(Path(args.video), w, h, select=want))
     for iid, anchors in groups.items():
+        # the subagent's box is about a character off: snap it to the text line it sits on
+        anchors = [(t, _detect.snap_to_ink(imgs[round(t * fps)], box) if round(t * fps) in imgs else box)
+                   for t, box in anchors]
         try:
-            frames = _detect.track_anchors(Path(args.video), anchors)
+            frames = _detect.track_anchors(Path(args.video), anchors, size=(w, h))
         except ValueError as e:
             raise ValueError(f"{iid}: {e}") from e
         frames, flagged = apply_failsafe([replace(f, target=tid) for f in frames], fps)

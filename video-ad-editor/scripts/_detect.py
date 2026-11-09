@@ -26,6 +26,9 @@ DUP_IOU = 0.5         # same code found at two scales
 BOX_PAD_MIN = 6       # route B: a subagent's box hugs the text, so every side grows by the largest of
 BOX_PAD_SHORT = 0.35  #   6 px, 0.35 x the box's short side, 0.04 x its long side (in video pixels)
 BOX_PAD_LONG = 0.04
+TRACK_GROW = 1.0      # route B: track a patch this many short sides taller above and below the box (a tight
+                      #   text box alone has too few features), then map the result back onto the box
+LINE_RATIO = 3        # snapping and the taller patch apply only to a text line: long side >= 3 x short side
 
 
 _DET = {}
@@ -313,25 +316,84 @@ def box_margin(bw, bh):
     return max(BOX_PAD_MIN, BOX_PAD_SHORT * min(bw, bh), BOX_PAD_LONG * max(bw, bh))
 
 
-def pad_quad(q, bw, bh, m):
-    """Grow a tracked quad of a (bw x bh) box by m box-pixels on every side: the padded box goes through the
-    same homography that maps the box onto the quad, so the far side of a tilted item gets its margin too."""
+def map_rect(q, bw, bh, r):
+    """The rect r = (x0, y0, x1, y1), in the pixels of a (bw x bh) box tracked onto quad q, as a frame quad."""
     q = np.asarray(q, np.float32).reshape(4, 2)
     rect = np.float32([(0, 0), (bw, 0), (bw, bh), (0, bh)])
     H = cv2.getPerspectiveTransform(rect, q)
-    big = np.float32([(-m, -m), (bw + m, -m), (bw + m, bh + m), (-m, bh + m)]).reshape(-1, 1, 2)
+    x0, y0, x1, y1 = r
+    big = np.float32([(x0, y0), (x1, y0), (x1, y1), (x0, y1)]).reshape(-1, 1, 2)
     return cv2.perspectiveTransform(big, H).reshape(-1, 2)
 
 
-def track_anchors(video, anchors, t0=0, t1=None, pad=True):
+def snap_to_ink(gray, box):
+    """A subagent's "tight" box is off by about a character. Grow it to the text line it sits on: the rows around
+    its strongest edge row while the edge energy stays high (a lighter gap ends the line), then the columns of
+    those rows while the smoothed energy stays high (gaps between digits are bridged). Never smaller than the
+    box; a line that does not look like one line (too tall or too short) keeps the box's own rows. A box that is
+    not a text line (see LINE_RATIO) is returned as it is."""
+    if max(box[2], box[3]) < LINE_RATIO * min(box[2], box[3]):
+        return tuple(box)
+    if gray.ndim == 3:
+        gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
+    H, W = gray.shape
+    x, y, bw, bh = box
+    s = min(bw, bh)
+    vert = bh > bw                                                       # a line printed top to bottom
+    if vert:
+        gray, (x, y, bw, bh), (H, W) = gray.T, (y, x, bh, bw), (W, H)
+    rx0, rx1 = max(int(x - 1.5 * s), 0), min(int(np.ceil(x + bw + 1.5 * s)), W)
+    ry0, ry1 = max(int(y - 0.8 * s), 0), min(int(np.ceil(y + bh + 0.8 * s)), H)
+    g = cv2.GaussianBlur(gray[ry0:ry1, rx0:rx1].astype(np.float32), (3, 3), 0)
+    e = np.abs(cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3)) + np.abs(cv2.Sobel(g, cv2.CV_32F, 0, 1, ksize=3))
+    bx0, bx1 = int(x) - rx0, int(np.ceil(x + bw)) - rx0
+    by0, by1 = int(y) - ry0, int(np.ceil(y + bh)) - ry0
+    rows = cv2.blur(e[:, bx0:bx1].mean(1).reshape(-1, 1), (1, 3)).ravel()
+    pk = by0 + int(np.argmax(rows[by0:by1]))
+    thr = np.percentile(rows, 15) + 0.5 * (rows[pk] - np.percentile(rows, 15))
+    t, b = pk, pk
+    while t > 0 and rows[t - 1] > thr:
+        t -= 1
+    while b < len(rows) - 1 and rows[b + 1] > thr:
+        b += 1
+    if not 0.6 * s <= b + 1 - t <= 1.6 * s:                              # not one line: keep the box's rows
+        t, b = by0, by1 - 1
+    k = max(3, int(0.6 * (b + 1 - t)))
+    cols = cv2.blur(e[t:b + 1].mean(0).reshape(1, -1), (k, 1)).ravel()
+    cthr = np.percentile(cols, 15) + 0.35 * (np.percentile(cols[bx0:bx1], 90) - np.percentile(cols, 15))
+    l, r = bx0, bx1 - 1
+    while l > 0 and cols[l - 1] > cthr:
+        l -= 1
+    while r < len(cols) - 1 and cols[r + 1] > cthr:
+        r += 1
+    x0, y0 = min(x, rx0 + l), min(y, ry0 + t)
+    x1, y1 = max(x + bw, rx0 + r + 1), max(y + bh, ry0 + b + 1)
+    out = (float(x0), float(y0), float(x1 - x0), float(y1 - y0))
+    return (out[1], out[0], out[3], out[2]) if vert else out
+
+
+def track_patch(box, w, h):
+    """The patch tracked for a route-B box: for a text line (see LINE_RATIO), TRACK_GROW short sides more above
+    and below (left and right for a vertical line); any other box as it is. Clipped to the w x h frame, in
+    whole pixels that contain the box (track_box crops whole pixels)."""
+    x, y, bw, bh = box
+    g = TRACK_GROW * min(bw, bh) if max(bw, bh) >= LINE_RATIO * min(bw, bh) else 0
+    gx, gy = (0, g) if bw >= bh else (g, 0)
+    x0, y0 = max(int(np.floor(x - gx)), 0), max(int(np.floor(y - gy)), 0)
+    x1, y1 = min(int(np.ceil(x + bw + gx)), w), min(int(np.ceil(y + bh + gy)), h)
+    return x0, y0, x1 - x0, y1 - y0
+
+
+def track_anchors(video, anchors, t0=0, t1=None, pad=True, size=None):
     """One item marked on several keyframes: track_box from each (t, (x, y, w, h)) and keep, per frame, a found
     polygon over a lost one and the higher confidence among found ones. Trimmed to the item's own span.
-    pad: grow each polygon by box_margin() of its anchor box (the box is tracked tight, the blur reaches past it)."""
+    pad: grow each polygon by box_margin() of its anchor box (the box is tracked tight, the blur reaches past it).
+    size: the video's (w, h), when the caller has it (saves a probe)."""
     anchors = sorted({t: box for t, box in reversed(anchors)}.items())   # one anchor per time, in order
     cache = {}                                                           # (t, from, to) -> track
     while True:
         try:
-            return _track_anchors(video, anchors, t0, t1, pad, cache)
+            return _track_anchors(video, anchors, t0, t1, pad, cache, size)
         except bt.WeakTemplate as e:
             # a soft keyframe (motion blur) has too few features: track from the other anchors instead
             bad = getattr(e, "t", None)
@@ -341,23 +403,27 @@ def track_anchors(video, anchors, t0=0, t1=None, pad=True):
             anchors = [a for a in anchors if a[0] != bad]
 
 
-def _track_anchors(video, anchors, t0, t1, pad, cache):
+def _track_anchors(video, anchors, t0, t1, pad, cache, size):
+    w, h = size or bt.probe(Path(video))[:2]
     best = {}
     for k, (t, box) in enumerate(anchors):
         # each anchor covers up to its neighbours only: SIFT runs ~2x the item's span, not once per anchor
         a = max(t0, anchors[k - 1][0]) if k else t0
         b = anchors[k + 1][0] if k + 1 < len(anchors) else t1
         m = box_margin(box[2], box[3]) if pad else 0
+        px, py, pw, ph = track_patch(box, w, h)
+        # the padded box in the tracked patch's own pixels
+        r = (box[0] - px - m, box[1] - py - m, box[0] + box[2] - px + m, box[1] + box[3] - py + m)
         if (t, a, b) not in cache:
             try:
-                cache[(t, a, b)] = bt.track_box(Path(video), t, box, a, b)
+                cache[(t, a, b)] = bt.track_box(Path(video), t, (px, py, pw, ph), a, b)
             except bt.WeakTemplate as e:
                 e.t = t                                                  # which anchor, for the retry
                 raise
         track = cache[(t, a, b)]
         for f in track:
-            if m and f.poly is not None:
-                f = bt.replace(f, poly=bt._plist(pad_quad(f.poly, box[2], box[3], m)))
+            if f.poly is not None:
+                f = bt.replace(f, poly=bt._plist(map_rect(f.poly, pw, ph, r)))
             cur = best.get(f.i)
             if cur is None or (cur.state == "lost" and f.state != "lost") \
                     or (f.state != "lost" and cur.state != "lost" and f.conf > cur.conf):

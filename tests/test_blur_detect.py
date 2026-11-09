@@ -342,7 +342,7 @@ def test_track_anchors_windows_between_neighbours(monkeypatch):
         return [bt.FrameBox(round(t * 30), [(0, 0), (9, 0), (9, 9), (0, 9)], 1.0, "tracked")]
 
     monkeypatch.setattr(bt, "track_box", fake)
-    _detect.track_anchors(Path("v.mp4"), [(2.5, (0, 0, 9, 9)), (0.5, (0, 0, 9, 9)), (1.5, (0, 0, 9, 9))])
+    _detect.track_anchors(Path("v.mp4"), [(2.5, (0, 0, 9, 9)), (0.5, (0, 0, 9, 9)), (1.5, (0, 0, 9, 9))], size=(540, 960))
     assert sorted(calls) == [(0.5, 0, 1.5), (1.5, 0.5, 2.5), (2.5, 1.5, None)]
 
 
@@ -379,6 +379,73 @@ def test_boxes_tight_text_box_gets_margin(tmp_path):
     m = max(4.0, 0.2 * hgt)                                                          # required reach past the ink
     need = [ink + off[i] + np.float32([(-m, -m), (m, -m), (m, m), (-m, m)]) for i in range(len(truth))]
     assert_all_covered(tmp_path, [[q] for q in need])
+
+
+def _slab_run(tmp_path, miss=None, **tile_kw):
+    """Two-line slab label moving across the frame; the cert line boxed tight on the first keyframe.
+    Returns (truth offsets, grade quad, cert quad)."""
+    from fixtures_blur import slab_tile
+    tile, grade, cert = slab_tile(**tile_kw)
+    video = tmp_path / "slab.mp4"
+    truth = make_code_video(video, [{"tile": tile, "start": (20, 300), "end": (90, 420)}])
+    off = [np.float32(row[0]).min(0) - _ink_quad_of(tile).min(0) for row in truth]
+    kf = keyframes(tmp_path, video)
+    f0 = kf["frames"][0]
+    hgt = float(cert[2, 1] - cert[0, 1])
+    box = kf_box(cert + off[f0["i"]], kf["scale"], pad=0)
+    if miss:                                     # a subagent box that misses part of the ink: (left, top) x height
+        dx, dy = miss[0] * hgt * kf["scale"], miss[1] * hgt * kf["scale"]
+        box = [box[0] + dx, box[1] + dy, box[2] - dx, box[3] - dy]
+    r = run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "b.json", [{"id": "cert", "t": f0["t"], "box": box}]))
+    assert r.returncode == 0, r.stderr
+    return off, grade, cert
+
+
+def _inside_any(polys, pts):
+    return [p for p in pts for _, poly in polys
+            if cv2.pointPolygonTest(poly.reshape(-1, 1, 2), (float(p[0]), float(p[1])), False) >= 0]
+
+
+def test_boxes_thin_tight_line_tracked_every_frame(tmp_path):
+    """A small cert line boxed tight to its ink is too thin to track on its own (real clip: 126 of 274 frames
+    lost). The script tracks a taller patch around it and still blurs the line, both ends, on every frame."""
+    off, _, cert = _slab_run(tmp_path, scale=0.4, thick=1)
+    hgt = float(cert[2, 1] - cert[0, 1])
+    m = max(4.0, 0.2 * hgt)
+    need = [cert + off[i] + np.float32([(-m, -m), (m, -m), (m, m), (-m, m)]) for i in range(len(off))]
+    assert_all_covered(tmp_path, [[q] for q in need])
+
+
+def _grade_hits(work, off, grade):
+    P = polys_by_frame(work)
+    xs = np.linspace(grade[0, 0], grade[1, 0], 25)
+    edge = np.float32([(x, grade[2, 1]) for x in xs] + [(x, grade[0, 1]) for x in xs])
+    return [i for i in range(len(off)) if _inside_any(P.get(i, []), edge + off[i])]
+
+
+def test_boxes_snaps_short_box_to_ink(tmp_path):
+    """Real clip: the subagent's "tight" box missed the first digit and the digits' tops. The script snaps the box
+    to the ink: the whole cert line is blurred on every frame, and the grade line above stays sharp."""
+    off, grade, cert = _slab_run(tmp_path, miss=(0.6, 0.3))
+    need = [cert + off[i] + np.float32([(-2, -1), (2, -1), (2, 1), (-2, 1)]) for i in range(len(off))]
+    assert_all_covered(tmp_path, [[q] for q in need])
+    bad = _grade_hits(tmp_path, off, grade)
+    assert not bad, f"grade line under the blur on frames {bad[:10]} (of {len(bad)})"
+
+
+def test_snap_to_ink_finds_the_line():
+    from fixtures_blur import slab_tile
+    tile, grade, cert = slab_tile()
+    img = np.full((400, 600), 150, np.uint8)
+    img[100:100 + tile.shape[0], 50:50 + tile.shape[1]] = tile
+    ink = cert + np.float32([50, 100])
+    hgt = float(ink[2, 1] - ink[0, 1])
+    x0, y0 = ink[0]
+    x1, y1 = ink[2]
+    short = (x0 + 0.6 * hgt, y0 + 0.3 * hgt, x1 - x0 - 0.6 * hgt, y1 - y0 - 0.3 * hgt)   # misses digit 1 and the tops
+    x, y, w, h = _detect.snap_to_ink(img, short)
+    assert x <= x0 + 1 and y <= y0 + 1 and x + w >= x1 - 1 and y + h >= y1 - 1, (x, y, w, h)
+    assert y > grade[2, 1] + 100, "snapped up into the grade line"
 
 
 def _ink_quad_of(tile):
@@ -463,7 +530,7 @@ def test_track_anchors_skips_weak_anchor(monkeypatch, capsys):
         return [bt.FrameBox(round(t * 30), [(0, 0), (9, 0), (9, 9), (0, 9)], 1.0, "tracked")]
 
     monkeypatch.setattr(bt, "track_box", fake)
-    out = _detect.track_anchors(Path("v.mp4"), [(0.5, (0, 0, 9, 9)), (1.5, (0, 0, 9, 9)), (2.5, (0, 0, 9, 9))])
+    out = _detect.track_anchors(Path("v.mp4"), [(0.5, (0, 0, 9, 9)), (1.5, (0, 0, 9, 9)), (2.5, (0, 0, 9, 9))], size=(540, 960))
     assert sorted(calls[-2:]) == [(0.5, 0, 2.5), (2.5, 0.5, None)]  # retry: windows rebuilt without the weak one
     assert [f.i for f in out] == [15, 75]
     assert "1.5" in capsys.readouterr().out
@@ -475,7 +542,7 @@ def test_track_anchors_all_weak_raises(monkeypatch):
 
     monkeypatch.setattr(bt, "track_box", fake)
     with pytest.raises(ValueError):
-        _detect.track_anchors(Path("v.mp4"), [(0.5, (0, 0, 9, 9)), (1.5, (0, 0, 9, 9))])
+        _detect.track_anchors(Path("v.mp4"), [(0.5, (0, 0, 9, 9)), (1.5, (0, 0, 9, 9))], size=(540, 960))
 
 
 def test_track_anchors_single_weak_clean_message(monkeypatch):
@@ -484,7 +551,7 @@ def test_track_anchors_single_weak_clean_message(monkeypatch):
 
     monkeypatch.setattr(bt, "track_box", fake)
     with pytest.raises(bt.WeakTemplate) as e:
-        _detect.track_anchors(Path("v.mp4"), [(0.5, (0, 0, 9, 9))])
+        _detect.track_anchors(Path("v.mp4"), [(0.5, (0, 0, 9, 9))], size=(540, 960))
     assert str(e.value) == "المرجع ما فيه تفاصيل كافية للتتبّع"
 
 
@@ -498,7 +565,7 @@ def test_track_anchors_retry_reuses_good_tracks(monkeypatch):
         return [bt.FrameBox(round(t * 30), [(0, 0), (9, 0), (9, 9), (0, 9)], 1.0, "tracked")]
 
     monkeypatch.setattr(bt, "track_box", fake)
-    _detect.track_anchors(Path("v.mp4"), [(t, (0, 0, 9, 9)) for t in (0.5, 1.5, 2.5, 3.5)])
+    _detect.track_anchors(Path("v.mp4"), [(t, (0, 0, 9, 9)) for t in (0.5, 1.5, 2.5, 3.5)], size=(540, 960))
     assert calls.count((0.5, 0, 1.5)) == 1 and calls.count((1.5, 0.5, 2.5)) == 1, calls
 
 
@@ -514,7 +581,7 @@ def test_boxes_old_keyframes_format_message(vids, tmp_path):
     assert r.returncode == 3 and "None" not in r.stderr and "keyframes" in r.stderr, r.stderr
 
 
-def test_pad_quad_follows_perspective():
+def test_map_rect_follows_perspective():
     """A box seen in strong perspective: the padded quad is the padded box through the same homography."""
     bw, bh, m = 200.0, 40.0, 12.0
     rect = np.float32([(0, 0), (bw, 0), (bw, bh), (0, bh)])
@@ -522,4 +589,22 @@ def test_pad_quad_follows_perspective():
     H = cv2.getPerspectiveTransform(rect, quad)
     want = cv2.perspectiveTransform(np.float32([(-m, -m), (bw + m, -m), (bw + m, bh + m), (-m, bh + m)])
                                     .reshape(-1, 1, 2), H).reshape(-1, 2)
-    assert np.allclose(_detect.pad_quad(quad, bw, bh, m), want, atol=0.5)
+    assert np.allclose(_detect.map_rect(quad, bw, bh, (-m, -m, bw + m, bh + m)), want, atol=0.5)
+
+
+
+def test_snap_and_patch_only_for_text_lines():
+    """Snapping and the taller tracking patch are for a thin text line. A screen-like box (not 3x longer than
+    tall), or a flat one, is tracked and blurred as the subagent drew it."""
+    rng = np.random.default_rng(1)
+    img = rng.integers(0, 255, (600, 800)).astype(np.uint8)          # texture everywhere
+    box = (300.0, 200.0, 200.0, 150.0)
+    assert _detect.snap_to_ink(img, box) == box
+    assert _detect.track_patch(box, 800, 600) == (300, 200, 200, 150)
+    small = (300.0, 200.0, 20.0, 26.0)                                 # a two-digit box, taller than wide
+    assert _detect.track_patch(small, 800, 600) == (300, 200, 20, 26)
+
+
+def test_track_patch_contains_the_box():
+    x, y, w, h = _detect.track_patch((10.4, 100.6, 200.3, 20.6), 800, 600)
+    assert x <= 10.4 and y <= 100.6 and x + w >= 210.7 and y + h >= 121.2

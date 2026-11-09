@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.2 — 2026-11-09
+
+### Fixed
+
+- **A subagent box that misses part of the text:** before tracking, `boxes` snaps each box to the ink of the text line it sits on (edge rows around its strongest row, then the columns of those rows). A box that missed the first character or the tops of the characters grows to cover them; a box is never made smaller.
+- **A thin text line lost by the tracker:** a box tight to one small line has too few features to follow. `boxes` now tracks a patch one short side taller above and below the box and maps the result back onto the box through the same homography. On a real clip this took the lost frames of a certificate line from 126 to 0. Snapping and the taller patch apply only to a text-line box (long side at least 3 × the short side); any other box is tracked as drawn.
+- **Fast motion:** `references/blur.md` says to run `keyframes --every 1 --max 16` when the camera moves fast. With an anchor only every 2 s the tracker drifted between anchors while still reporting high confidence.
+
+### Not changed
+
+- The route B margin stays as in 1.1.1 (largest of 6 px, 0.35 × short side, 0.04 × long side, on every side), and the subagent is still asked for a box with a margin. A tighter top and bottom margin kept the line above the number sharp, but on fast motion it left digits readable between anchors. Privacy comes first, so a line just above or below the blurred text can still lose its edge.
+
 ## 1.1.1 — 2026-11-09
 
 ### Fixed

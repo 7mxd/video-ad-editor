@@ -193,3 +193,31 @@ def text_ink_quad(tile, inset=8):
     ys, xs = np.nonzero(core < 128)
     x0, y0, x1, y1 = xs.min() + inset, ys.min() + inset, xs.max() + 1 + inset, ys.max() + 1 + inset
     return np.float32([(x0, y0), (x1, y0), (x1, y1), (x0, y1)])
+
+
+
+def slab_tile(grade="MS 64", cert="2886071-008", scale=1.1, thick=3, gap=0.6, pad=(30, 26)):
+    """A slab label: a grade line above a cert-number line, `gap` x the cert ink height apart (ink to ink), plus a
+    frame line. Returns (tile, grade_quad, cert_quad): the ink box of each line in tile pixels."""
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    (gw, gh), _ = cv2.getTextSize(grade, font, scale * 1.2, thick)
+    (cw, ch), _ = cv2.getTextSize(cert, font, scale, thick)
+    want = sep = None
+    for _ in range(3):                                   # text boxes are not ink boxes: settle the ink-to-ink gap
+        sep = ch if sep is None else sep
+        H = pad[1] + gh + sep + ch + pad[1]
+        t = np.full((H, max(gw, cw) + 2 * pad[0]), 255, np.uint8)
+        cv2.putText(t, grade, (pad[0], pad[1] + gh), font, scale * 1.2, 0, thick, cv2.LINE_AA)
+        cv2.putText(t, cert, (pad[0], pad[1] + gh + sep + ch), font, scale, 0, thick, cv2.LINE_AA)
+        cv2.rectangle(t, (4, 4), (t.shape[1] - 5, t.shape[0] - 5), 90, 2)
+        mid = pad[1] + gh + sep // 2
+        g, c = _line_ink(t, 8, mid), _line_ink(t, mid, H - 8)
+        want = int(round(gap * (c[2, 1] - c[0, 1])))
+        sep += want - int(c[0, 1] - g[2, 1])
+    return t, g, c
+
+
+def _line_ink(t, y0, y1):
+    ys, xs = np.nonzero(t[y0:y1, 8:-8] < 128)
+    return np.float32([(xs.min() + 8, ys.min() + y0), (xs.max() + 9, ys.min() + y0),
+                       (xs.max() + 9, ys.max() + 1 + y0), (xs.min() + 8, ys.max() + 1 + y0)])
