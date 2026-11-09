@@ -336,3 +336,17 @@ def test_qa_sheet_draws_outside_tiles(clips, tmp_path):
 def test_qa_outside_includes_frames_next_to_windows():
     picks, outside = bt.qa_picks(_first_half(), 90, max_tiles=24, outside=6, fps=30)
     assert {50, 59} <= set(outside)        # 0.2 s and 0.5 s after the window's last frame (44)
+
+
+def test_blur_plane_blurs_overlap_of_two_polygons():
+    """Two targets on one frame that overlap (cert number over a barcode quad, or two tracks of one barcode):
+    the shared area must be blurred too, not left sharp by an even-odd fill."""
+    rng = np.random.default_rng(0)
+    plane = rng.integers(0, 256, (120, 200), dtype=np.uint8)
+    a = np.array([(20, 20), (140, 20), (140, 100), (20, 100)], float)
+    b = np.array([(60, 40), (180, 40), (180, 110), (60, 110)], float)
+    out = plane.copy()
+    bt._blur_plane(out, [a, b], 15)
+    overlap = (slice(45, 95), slice(65, 135))
+    assert np.abs(out[overlap].astype(int) - plane[overlap].astype(int)).mean() > 20
+    assert out[overlap].std() < plane[overlap].std() / 3

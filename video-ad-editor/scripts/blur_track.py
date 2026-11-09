@@ -437,7 +437,8 @@ def _blur_plane(plane, polys, k):
         return
     roi = plane[y0:y1, x0:x1]
     mask = np.zeros(roi.shape, np.uint8)
-    cv2.fillPoly(mask, [np.round(p - [x0, y0]).astype(np.int32) for p in polys], 255)
+    for p in polys:  # one fill per polygon: a single multi-polygon fill leaves overlaps unfilled (even-odd)
+        cv2.fillPoly(mask, [np.round(p - [x0, y0]).astype(np.int32)], 255)
     roi[mask > 0] = cv2.GaussianBlur(roi, (k, k), 0)[mask > 0]
 
 
