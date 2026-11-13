@@ -185,7 +185,7 @@ def test_no_upstream_promo_readme():
 
 
 CREDIT = (
-    "> Based on [majedphotos/video-ad-editor](https://github.com/majedphotos/video-ad-editor)"
+    "Based on [majedphotos/video-ad-editor](https://github.com/majedphotos/video-ad-editor)"
     " by Majed Alzaabi (MIT)."
 )
 
@@ -197,7 +197,10 @@ def test_attribution():
     assert "Copyright (c) 2026 Majed Alzaabi" in lic
     assert "Copyright (c) 2026 7mxd" in lic
     readme = (ROOT / "README.md").read_text(encoding="utf-8-sig")
-    assert readme.splitlines()[0] == CREDIT
+    # the README opens with this project; the credit to the original sits in its own section at the end
+    assert readme.splitlines()[0] == "# video-ad-editor"
+    credits = readme.split("\n## الشكر · Credits\n")
+    assert len(credits) == 2 and CREDIT in credits[1]
     plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
     assert plugin["upstream"] == "https://github.com/majedphotos/video-ad-editor"
     assert plugin["description"].endswith("Based on video-ad-editor by Majed Alzaabi")

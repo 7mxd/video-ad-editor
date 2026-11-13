@@ -766,7 +766,10 @@ def _read_boxes(path):
         box = it.get("box")
         if not isinstance(box, list) or len(box) != 4                 or not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in box):
             raise ValueError(f"{where}: الحقل «box» لازم يكون [x, y, w, h] — أربعة أرقام")
-        out.append((str(it["id"]), float(t), [float(v) for v in box]))
+        kind = it.get("kind", "text")
+        if kind not in ("text", "bars"):
+            raise ValueError(f"{where}: الحقل «kind» لازم يكون \"text\" أو \"bars\"")
+        out.append((str(it["id"]), float(t), [float(v) for v in box], kind == "bars"))
     return {"items": out, "not_found": [str(x) for x in nf]}
 
 
@@ -778,8 +781,16 @@ def _nothing_found(args):
     return 0
 
 
+def _neighbour_polys(frames, i):
+    """The polygons other targets blur on frame i where they were seen there (tracked or widened): a held frame
+    repeats an old position and must not shrink a bars box's pad (see _detect.bar_sides)."""
+    return [f.poly for f in frames if f.i == i and f.poly and f.state in ("tracked", "widened")]
+
+
 def _boxes_cmd(args, meta):
-    """boxes.json = {"items": [{"id", "t", "box": [x, y, w, h]}], "not_found": [names]}, in keyframe pixels."""
+    """boxes.json = {"items": [{"id", "t", "box": [x, y, w, h], "kind"?}], "not_found": [names]}, in keyframe pixels.
+    kind: "text" (default) or "bars" (barcode bars: see _detect.BOX_PAD_BARS); bars if any of an id's items says so.
+    Bars are tracked after the text items, so each bars anchor sees every other target's polygon (see bar_sides)."""
     import _detect
     kj = Path(args.work) / "kf" / "keyframes.json"
     if not kj.exists():
@@ -796,8 +807,10 @@ def _boxes_cmd(args, meta):
     scale = float(kd["scale"])
     data = _read_boxes(args.boxes)
     fps, n, w, h = meta["fps"], meta["n"], meta["w"], meta["h"]
-    groups = {}
-    for iid, t, box in data["items"]:
+    groups, bars = {}, set()
+    for iid, t, box, is_bars in data["items"]:
+        if is_bars:
+            bars.add(iid)
         x, y, bw, bh = (v / scale for v in box)
         x0, y0, x1, y1 = max(x, 0), max(y, 0), min(x + bw, w), min(y + bh, h)
         if not (0 <= round(t * fps) < n):
@@ -814,12 +827,16 @@ def _boxes_cmd(args, meta):
     tid = max(ids) + 1 if (args.add and ids) else 0
     want = sorted({round(t * fps) for a in groups.values() for t, _ in a})
     imgs = dict(read_frames(Path(args.video), w, h, select=want))
-    for iid, anchors in groups.items():
+    for iid in sorted(groups, key=lambda k: k in bars):                  # text first: bars look for their neighbours
         # the subagent's box is about a character off: snap it to the text line it sits on
+        one = sorted({t: box for t, box in reversed(groups[iid])}.items())   # one box per time: the first (as tracked)
         anchors = [(t, _detect.snap_to_ink(imgs[round(t * fps)], box) if round(t * fps) in imgs else box)
-                   for t, box in anchors]
+                   for t, box in one]
+        side = False
+        if iid in bars:                                                  # the other targets on each anchor's frame
+            side = {t: _detect.bar_sides(box, _neighbour_polys(all_frames, round(t * fps))) for t, box in anchors}
         try:
-            frames = _detect.track_anchors(Path(args.video), anchors, size=(w, h))
+            frames = _detect.track_anchors(Path(args.video), anchors, size=(w, h), bars=side)
         except ValueError as e:
             raise ValueError(f"{iid}: {e}") from e
         frames, flagged = apply_failsafe([replace(f, target=tid) for f in frames], fps)

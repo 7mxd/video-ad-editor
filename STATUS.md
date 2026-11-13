@@ -1,6 +1,6 @@
-# Status — 2026-11-09
+# Status — 2026-11-13
 
-Version 1.1.2 on branch `rebuild`, based on upstream 6.3.0 (commit a69492d). Public repo: https://github.com/7mxd/video-ad-editor
+Version 1.1.3 on branch `rebuild`, based on upstream 6.3.0 (commit a69492d). Public repo: https://github.com/7mxd/video-ad-editor
 
 ## Current state
 
@@ -102,6 +102,17 @@ The probed rate was 30/1, and the 813 frames match ffprobe's count.
 
 (The full run log lives in a local, git-excluded working note and is not part of the repo.)
 
+## 1.1.3 real-clip check (2026-11-13)
+
+**Sample.** The same 15 s slab clip as 1.1.1 and 1.1.2 (SDR 1080×1920, 30 fps). Hidden: the certificate number and the barcode. Not in the repo.
+
+Stages: `detect --kinds barcode` 12 s · subagent boxes + `boxes --add` for the certificate 57 s · barcode repair round (`"kind": "bars"`) 65 s · `apply` 8 s · `qa` 1 s. 233 tests pass.
+
+- **What went wrong on the way:** in 1.1.2 the barcode still showed a thin row of bar ends (~8–10 ticks) at 13.33 s under a strict zoomed QA. Measuring bar-likeness from the image (row correlation, gradient direction) did not separate the barcode from the certificate line on this clip, so a box is marked `bars` by its role instead. A plain 0.6× margin on both sides cleared the bars but blurred the bottom of "MS 66" on most of the clip (owner: 78/100); making it side-aware fixed most of that (bars above the certificate's top: 194 → 71 of 303 frames).
+- **Subagent QA (blind, 2× zooms, 14 frames from 5.50 s to 14.50 s):** no certificate digit readable and no barcode bar countable on any frame. "MS 66" as sharp as in 1.1.2 on 10 of 14 frames; softer at 13.33 and 13.47 s (glare) and slightly at 5.50 s.
+- **Owner review:** partial pass, 82/100 (1.1.2: 85/100). Privacy is stricter (no bar ticks left), and "MS 66" is a little softer.
+- **Next:** most of what still blurs "MS 66" is the certificate line's own margin (232 of 303 frames), not the bars. One option: clip the top of the bars box on each frame to the certificate's top.
+
 ## 1.1.2 real-clip check (2026-11-09)
 
 **Sample.** The same 15 s slab clip as 1.1.1 (SDR 1080×1920, 30 fps). Hidden: the certificate number and the barcode. Not in the repo.
@@ -142,7 +153,7 @@ Stages: convert 34 s · `detect --kinds barcode` 14 s · `keyframes` 3 s (8 fram
 
 - **Studio `--lan`:** every path needs the token (a cookie after the first visit) and there is no directory listing, but the share link carries the full-power token: anyone you send it to can edit and render. Default (`127.0.0.1`) accepts POST only from `127.0.0.1`/`localhost`.
 - **Beat detection has no confidence score:** a clip with ambient audio can be offered a beat montage it does not suit. Pick the voice or plain montage instead.
-- **Blur:** tested on synthetic footage and two real clips. Auto-detect covers QR codes, barcodes and faces only; anything else goes through keyframes and a subagent. The barcode detector can lock onto glare on a glossy label: check the QA sheet and run one repair round. A flat, featureless target (a dark TV screen) is refused as "not enough detail". A boxed text line keeps its margin on every side, so a line printed just above it can lose its bottom edge; on fast camera motion, use `keyframes --every 1`.
+- **Blur:** tested on synthetic footage and two real clips. A barcode the detector misses goes through `boxes` with `"kind": "bars"`. Auto-detect covers QR codes, barcodes and faces only; anything else goes through keyframes and a subagent. The barcode detector can lock onto glare on a glossy label: check the QA sheet and run one repair round. A flat, featureless target (a dark TV screen) is refused as "not enough detail". A boxed text line keeps its margin on every side, so a line printed just above it can lose its bottom edge; on fast camera motion, use `keyframes --every 1`.
 - **Mac-only features stay Mac-only on Windows:** person cut-out (text behind the person, the three cut styles, collage, backdrop, "head out of the card" podcast scenes), hand tracking, gallery face tracking (`36`) and the HDR converter. Setup lists them at step 0. On Windows a landscape source is cropped from the centre and the head-crop step (23) keeps `faceAnchor`: fix the crop by hand in `shots.json` and `cardTop` in `studio.json`. Podcast face tracking on Windows uses OpenCV Haar: less accurate than Vision, and its mouth signal is a contrast proxy, not a lip measurement. It has not been checked on a real multi-cam session.
 - Static pages (onboarding, studio share/mobile, the moves gallery) still load fonts from Google; rendering does not.
 - On Linux without `/Applications` (or with `CLAUDE_SANDBOX` set), setup sends one `curl -I` to the Whisper model host to tell a sandbox with no internet from a normal machine.

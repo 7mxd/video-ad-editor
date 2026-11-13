@@ -1,8 +1,6 @@
-> Based on [majedphotos/video-ad-editor](https://github.com/majedphotos/video-ad-editor) by Majed Alzaabi (MIT).
+# video-ad-editor
 
 <p align="center"><img src="docs/img/hero.jpg" alt="video-ad-editor — Arabic video editing for Claude Code" width="100%"></p>
-
-# video-ad-editor
 
 <div dir="rtl">
 
@@ -13,6 +11,30 @@
 </div>
 
 **Arabic video editing inside Claude Code, without an editing app.** Attach a clip, write one sentence, and the edit happens in code: ffmpeg cuts, Whisper transcribes, a headless-browser engine draws captions and motion. One skill, five modes, series profiles and a lessons loop.
+
+---
+
+## ليش هالنسخة · Why this repo
+
+<div dir="rtl">
+
+هالمشروع إعادة بناء لبلقن مونتاج عربي مفتوح المصدر. الفكرة نفسها، بس بنيته من جديد عشان يشتغل على ويندوز بدون ترقيع، ويصرف توكنز أقل، وما ينزّل أو يشغّل شي بدون إذنك. التفاصيل والقياسات بـ[docs/AUDIT.md](docs/AUDIT.md).
+
+- **سكل واحد بدل أربعة:** الأوضاع الخمسة تحت سكل واحد، وكل وضع يقرا خطواته بس وقت الحاجة. قائمة السكلات صارت 278 توكن بدل 1,233.
+- **ويندوز أول:** `python` بدل اختصار المتجر، كروم أو إيدج يُكتشفون بنفسهم، والخطوط داخل البلقن فيشتغل بدون نت.
+- **أمان:** ما فيه تحديث ذاتي، التنزيلات تنفحص بـSHA-256، والاستوديو على جهازك بس (`127.0.0.1`).
+- **بلر للخصوصية:** تحدد الرقم أو الشاشة مرة، والسكل يتتبّعه ويبلّره، ويكتشف الباركود والـQR والوجوه بنفسه.
+- **سلاسل ودروس:** كل تصحيح تعتمده يصير قاعدة، فما يتكرر الغلط.
+
+</div>
+
+A rebuild of an open-source Arabic video-editing plugin: same idea, rebuilt to run natively on Windows, cost fewer tokens, and never download or run anything without asking. Measurements are in [docs/AUDIT.md](docs/AUDIT.md).
+
+- **One skill instead of four:** five modes behind one router; each mode loads its steps on demand. Skill listing 278 tokens instead of 1,233.
+- **Windows first:** `python` instead of the Store alias, Chrome or Edge found automatically, fonts bundled so rendering works offline.
+- **Safer:** no self-update, downloads checked against SHA-256, studio bound to `127.0.0.1`.
+- **Privacy blur:** mark a number or screen once and it is tracked and blurred; QR codes, barcodes and faces can be found automatically.
+- **Series and lessons:** every correction you approve becomes a rule, so the same mistake doesn't come back.
 
 ---
 
@@ -58,8 +80,6 @@ On first use the skill checks its tools itself (ffmpeg, Node, Python, Chrome or 
 | 🎞️ | **مونتاج** — مجلد مقاطع بلا كلام ← ريل على الإيقاع أو على فويس · *Montage* | «مونتاج من هالمقاطع» |
 | 🖼️ | **كفر وثمبنيل** — كفر الريل وثمبنيل يوتيوب · *Covers and thumbnails* | «سو كفر» · «ثمبنيل يوتيوب» |
 
-<p align="center"><img src="docs/img/cover_reel.jpg" alt="Reel cover example" width="320"></p>
-
 <div dir="rtl">
 
 وفوقها: مشروع كاب كت بدل MP4 («سوّه بكاب كت»)، واستوديو تعدّل فيه بإيدك («افتح الاستوديو»). الكاروسيل مو من شغل هالسكل.
@@ -96,11 +116,11 @@ Everything lives outside the plugin under `VAE_HOME` (default `~/.video-ad-edito
 
 <div dir="rtl">
 
-«بلّر الرقم» أو «غطِّ الشاشة»: تحدد الهدف مرة (صورة مرجع أو مربع على فريم)، والسكل يتتبّعه قدّام وورا ويبلّره قبل الكابشن والموشن. إذا شك بالتتبّع يوسّع البلر بدل ما يكشف، وإذا ضاع الهدف أكثر من ثانية يوقف ويسألك (تحدده من جديد أو توافق على شريط بعرض الفريم). ما فيه كشف تلقائي للوجوه — أنت تحدد الهدف.
+«بلّر الرقم» أو «غطِّ الشاشة»: تحدد الهدف مرة (صورة مرجع أو مربع على فريم)، والسكل يتتبّعه قدّام وورا ويبلّره قبل الكابشن والموشن. إذا شك بالتتبّع يوسّع البلر بدل ما يكشف، وإذا ضاع الهدف أكثر من ثانية يوقف ويسألك (تحدده من جديد أو توافق على شريط بعرض الفريم). وتقدر تقوله «بلّر الباركودات والوجوه» فيلقاها بنفسه، أو «بلّر رقم الشهادة» فيحدده من لقطات الفيديو ويتتبّعه.
 
 </div>
 
-Ask to blur a number, screen, paper, plate or face. You mark the target once (a reference image or a box on one frame); `scripts/blur_track.py` tracks it both ways and blurs it before captions and motion are drawn. Uncertain frames get a wider blur; if the target is lost for more than a second the render is refused until you re-mark it or accept a full-width band. Each run prints a one-line numeric summary. Needs OpenCV (`scripts/00_setup.sh --extras`). There is no automatic face detection.
+Ask to blur a number, screen, paper, plate or face. You mark the target once (a reference image or a box on one frame); `scripts/blur_track.py` tracks it both ways and blurs it before captions and motion are drawn. Uncertain frames get a wider blur; if the target is lost for more than a second the render is refused until you re-mark it or accept a full-width band. Each run prints a one-line numeric summary. Needs OpenCV (`scripts/00_setup.sh --extras`). It can also find QR codes, barcodes and faces by itself, or anything you name in words ("blur the cert number"): it marks it on keyframes and tracks it.
 
 ---
 
@@ -130,3 +150,7 @@ See [STATUS.md](STATUS.md) and [CHANGELOG.md](CHANGELOG.md). The audit behind th
 ## الرخصة · License
 
 MIT — see [LICENSE](LICENSE). Original work © Majed Alzaabi; this rebuild © 7mxd.
+
+## الشكر · Credits
+
+Based on [majedphotos/video-ad-editor](https://github.com/majedphotos/video-ad-editor) by Majed Alzaabi (MIT).

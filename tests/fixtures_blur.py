@@ -221,3 +221,43 @@ def _line_ink(t, y0, y1):
     ys, xs = np.nonzero(t[y0:y1, 8:-8] < 128)
     return np.float32([(xs.min() + 8, ys.min() + y0), (xs.max() + 9, ys.min() + y0),
                        (xs.max() + 9, ys.max() + 1 + y0), (xs.min() + 8, ys.max() + 1 + y0)])
+
+
+def make_motion_video(path, tile, pose, n=31, fps=30, blur=None, sub=9):
+    """A tile moving on the portrait frame with a pose per (fractional) frame: pose(f) -> (cx, cy, scale, degrees).
+    blur(i) -> exposure in frames (0 = sharp): frame i averages `sub` renders over [i - e/2, i + e/2] (motion blur).
+    Returns A[i]: the 2x3 tile -> frame transform at frame i (map a tile quad with apply_pose)."""
+    path = Path(path)
+    rng = np.random.default_rng(5)
+    bg = np.clip(150 + rng.integers(-12, 13, (CH, CW)), 0, 255).astype(np.float32)
+    th, tw = tile.shape
+    ones = np.full_like(tile, 255)
+
+    def affine(f):
+        cx, cy, s, deg = pose(f)
+        A = cv2.getRotationMatrix2D((tw / 2, th / 2), deg, s)
+        A[:, 2] += (cx - tw / 2, cy - th / 2)
+        return A
+
+    cmd = ["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "gray", "-s", f"{CW}x{CH}",
+           "-r", str(fps), "-i", "-", "-c:v", "libx264", "-crf", "12", "-pix_fmt", "yuv420p", "-g", "30", str(path)]
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    out = []
+    for i in range(n):
+        e = blur(i) if blur else 0
+        ts = [i] if e <= 0 else list(np.linspace(i - e / 2, i + e / 2, sub))
+        acc = np.zeros((CH, CW), np.float32)
+        for f in ts:
+            A = affine(f)
+            t = cv2.warpAffine(tile, A, (CW, CH), flags=cv2.INTER_LINEAR, borderValue=0).astype(np.float32)
+            m = cv2.warpAffine(ones, A, (CW, CH), flags=cv2.INTER_LINEAR, borderValue=0).astype(np.float32) / 255
+            acc += bg * (1 - m) + t * m
+        p.stdin.write(np.clip(acc / len(ts), 0, 255).astype(np.uint8).tobytes())
+        out.append(affine(i))
+    p.stdin.close()
+    assert p.wait() == 0
+    return out
+
+
+def apply_pose(A, quad):
+    return cv2.transform(np.float32(quad).reshape(-1, 1, 2), A).reshape(-1, 2)

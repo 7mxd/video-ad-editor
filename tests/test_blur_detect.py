@@ -342,7 +342,7 @@ def test_track_anchors_windows_between_neighbours(monkeypatch):
         return [bt.FrameBox(round(t * 30), [(0, 0), (9, 0), (9, 9), (0, 9)], 1.0, "tracked")]
 
     monkeypatch.setattr(bt, "track_box", fake)
-    _detect.track_anchors(Path("v.mp4"), [(2.5, (0, 0, 9, 9)), (0.5, (0, 0, 9, 9)), (1.5, (0, 0, 9, 9))], size=(540, 960))
+    _detect.track_anchors(Path("v.mp4"), [(2.5, (0, 0, 9, 9)), (0.5, (0, 0, 9, 9)), (1.5, (0, 0, 9, 9))], size=(540, 960), verify=False)
     assert sorted(calls) == [(0.5, 0, 1.5), (1.5, 0.5, 2.5), (2.5, 1.5, None)]
 
 
@@ -433,6 +433,287 @@ def test_boxes_snaps_short_box_to_ink(tmp_path):
     assert not bad, f"grade line under the blur on frames {bad[:10]} (of {len(bad)})"
 
 
+def _fast_slab(tmp_path, n=31, blur=1.0):
+    """Slab label (grade line 1x the cert height above it) panning ~25 px/frame while zooming 1.0 -> 1.4 and turning
+    2 degrees, motion-blurred between two sharp keyframes 1 s apart; the cert boxed tight on both.
+    Returns (per-frame transform, grade quad, cert quad)."""
+    from fixtures_blur import apply_pose, make_motion_video, slab_tile
+    tile, grade, cert = slab_tile(gap=1.0)
+
+    def pose(f):
+        k = f / (n - 1)
+        e = k * k * (3 - 2 * k)                      # eases in and out: fastest (and most blurred) mid-way
+        return 180 + 100 * e, 230 + 500 * e, 1.0 + 0.4 * e, 2 * e
+
+    video = tmp_path / "fast.mp4"
+    A = make_motion_video(video, tile, pose, n=n, blur=lambda i: 0 if i in (0, n - 1) else blur)
+    kf = keyframes(tmp_path, video, "--every", "1")
+    items = [{"id": "cert", "t": f["t"], "box": kf_box(apply_pose(A[f["i"]], cert), kf["scale"], pad=0)}
+             for f in kf["frames"]]
+    assert [f["i"] for f in kf["frames"]] == [0, n - 1]
+    r = run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "b.json", items))
+    assert r.returncode == 0, r.stderr
+    return A, grade, cert
+
+
+def test_boxes_fast_motion_tracks_between_anchors(tmp_path):
+    """Real clip: on fast, motion-blurred camera moves the tracker reported high confidence while its box sat off the
+    cert line (digits readable for ~0.5 s), and lost frames were held and doubled over the line above. Every frame
+    must blur the whole cert line and leave the grade line's ink outside every polygon."""
+    from fixtures_blur import apply_pose
+    A, grade, cert = _fast_slab(tmp_path)
+    P = polys_by_frame(tmp_path)
+    miss = [i for i in range(len(A)) if not covered(P.get(i, []), apply_pose(A[i], cert))]
+    assert not miss, f"cert not covered on frames {miss}"
+    hits = []
+    for i in range(len(A)):
+        g = apply_pose(A[i], grade)
+        ink = np.float32([g[3] + (g[2] - g[3]) * t for t in np.linspace(0, 1, 25)] +
+                         [g[0] + (g[1] - g[0]) * t for t in np.linspace(0, 1, 25)])
+        if _inside_any(P.get(i, []), ink):
+            hits.append(i)
+    assert not hits, f"grade line under the blur on frames {hits}"
+
+
+def test_refine_keeps_the_box_shape():
+    """Real clip: on blurred frames ECC stretched a barcode box by up to 60 % (bars look the same at every height)
+    and still scored a match, so the bar ends stuck out under the blur. Between neighbouring frames a box changes
+    by a few percent at most: refine may move it, but its sides change by no more than 8 %."""
+    tpl = ean13_tile(height=60).astype(np.float32)
+    th, tw = tpl.shape
+    frame = np.full((400, 600), 150, np.float32)
+    tall = cv2.resize(tpl, (tw, int(th * 1.4)))                         # the same bars, 1.4x taller
+    frame[100:100 + tall.shape[0], 100:100 + tw] = tall
+    H0 = np.array([[1, 0, 100], [0, 1, 100], [0, 0, 1]], np.float64)
+    H, _ = _detect.refine(frame, tpl, H0, 10)
+    q = cv2.perspectiveTransform(np.float32([(0, 0), (tw, 0), (tw, th), (0, th)]).reshape(-1, 1, 2), H).reshape(-1, 2)
+    w, h = np.linalg.norm(q[1] - q[0]), np.linalg.norm(q[3] - q[0])
+    assert abs(w / tw - 1) <= 0.08 and abs(h / th - 1) <= 0.08, (w, h, tw, th)
+
+
+def test_boxes_fast_barcode_bars_stay_covered(tmp_path):
+    """Real clip: bars look the same at every height, so refining a barcode box on a motion-blurred frame could
+    stretch it up or down at no cost, and the ends of the bars stuck out under the blur. Every frame must cover
+    every bar end to end."""
+    from fixtures_blur import _ink_quad, apply_pose, make_motion_video
+    tile = ean13_tile(height=60)
+    ink = _ink_quad(tile)
+    n = 31
+
+    def pose(f):
+        k = f / (n - 1)
+        e = k * k * (3 - 2 * k)
+        return 200 + 100 * e, 230 + 500 * e, 1.0 + 0.4 * e, 2 * e
+
+    video = tmp_path / "bars.mp4"
+    A = make_motion_video(video, tile, pose, n=n, blur=lambda i: 0 if i in (0, n - 1) else 1.0)
+    kf = keyframes(tmp_path, video, "--every", "1")
+    items = [{"id": "bars", "t": f["t"], "box": kf_box(apply_pose(A[f["i"]], ink), kf["scale"], pad=0)}
+             for f in kf["frames"]]
+    r = run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "b.json", items))
+    assert r.returncode == 0, r.stderr
+    P = polys_by_frame(tmp_path)
+    miss = [i for i in range(n) if not covered(P.get(i, []), apply_pose(A[i], ink))]
+    assert not miss, f"bars not covered on frames {miss}"
+
+
+def test_track_anchors_keeps_the_anchor_shape_on_blurred_frames(tmp_path, monkeypatch):
+    """On motion-blurred frames SIFT returned barcode boxes that were stretched, squashed or sheared and still matched
+    (bars look the same at every height): Hook 13.33 s left a row of bar ends outside the blur, and on a synthetic
+    pan a sheared box left the bars' right end sharp. The tracker gives where the box is, how big and how turned;
+    its shape stays the anchor's. Every bar is covered on every frame."""
+    from fixtures_blur import _ink_quad, apply_pose, make_motion_video
+    tile = ean13_tile(height=60)
+    ink = _ink_quad(tile)
+    n = 31
+
+    def pose(f):
+        k = f / (n - 1)
+        e = k * k * (3 - 2 * k)
+        return 200 + 100 * e, 230 + 500 * e, 1.0 + 0.4 * e, 0      # no turn: both anchor boxes pad alike
+
+    video = tmp_path / "bars.mp4"
+    A = make_motion_video(video, tile, pose, n=n, blur=lambda i: 0 if i in (0, n - 1) else 1.0)
+    real = bt.track_box
+    bad = {9: 1.35, 10: 0.75, 15: 1.35, 21: 0.75}                       # frame -> wrong height factor (SIFT)
+
+    def stretched(video, t, box, t0=0, t1=None):
+        out = []
+        for f in real(video, t, box, t0, t1):
+            if f.i in bad and f.poly is not None:
+                p = np.float32(f.poly)
+                c = p.mean(0)
+                p = c + (p - c) * np.float32([1.0, bad[f.i]])
+                f = bt.replace(f, poly=bt._plist(p))
+            out.append(f)
+        return out
+
+    monkeypatch.setattr(bt, "track_box", stretched)
+    anchors = []
+    for i in (0, n - 1):
+        q = apply_pose(A[i], ink)
+        x0, y0 = q.min(0)
+        x1, y1 = q.max(0)
+        anchors.append((i / 30, (int(x0), int(y0), int(np.ceil(x1 - x0)), int(np.ceil(y1 - y0)))))
+    out = _detect.track_anchors(video, anchors)
+    P = {f.i: [("bars", np.float32(f.poly))] for f in out if f.poly is not None}
+    miss = [i for i in range(n) if not covered(P.get(i, []), apply_pose(A[i], ink))]
+    assert not miss, f"bars not covered on frames {miss}"
+
+
+@pytest.mark.parametrize("kind, pad", [("bars", (0.6, 0.6)), ("cert", (0.35, 0.35)), ("bars-down", (0.35, 0.6))])
+def test_track_anchors_pads_barcode_bars_more_across_the_bars(tmp_path, kind, pad):
+    """Real clip: Hook 13.33 s left a thin row of bar ends under the barcode box's 0.35 x margin (the box was ~14 px
+    short of the bars at that frame). Bars look the same at every height, so their box is easy to place a little
+    short: a box marked "bars" gets BOX_PAD_BARS x its short side across the bars. A text line (the cert) keeps
+    0.35 x, so the grade line above it stays sharp. (Measuring "do the rows repeat" was tried: on Hook the real bars,
+    1-2 px wide on a turned slab, scored like the cert line, so the boxing pass names the kind instead.)
+    bars-down: a side another item already blurs (see bar_sides) keeps 0.35 x."""
+    from fixtures_blur import _ink_quad, apply_pose, make_motion_video, slab_tile
+    if kind.startswith("bars"):
+        tile = ean13_tile(height=60)
+        ink = _ink_quad(tile)
+    else:
+        tile, _, ink = slab_tile(gap=1.0)
+    n = 11
+
+    def pose(f):
+        return 270 + 4 * f, 400 + 6 * f, 1.0, 0
+
+    video = tmp_path / f"{kind}.mp4"
+    A = make_motion_video(video, tile, pose, n=n)
+    anchors = []
+    for i in (0, n - 1):
+        q = apply_pose(A[i], ink)
+        x0, y0 = q.min(0)
+        x1, y1 = q.max(0)
+        anchors.append((i / 30, (int(x0), int(y0), int(np.ceil(x1 - x0)), int(np.ceil(y1 - y0)))))
+    bars = {"bars": True, "cert": False, "bars-down": {t: (False, True) for t, _ in anchors}}[kind]
+    out = {f.i: np.float32(f.poly) for f in _detect.track_anchors(video, anchors, bars=bars) if f.poly is not None}
+    _, (x, y, bw, bh) = anchors[0]
+    top, bottom = y - out[0][:, 1].min(), out[0][:, 1].max() - (y + bh)
+    want = [k * min(bw, bh) for k in pad]
+    assert top >= want[0] - 1.5 and bottom >= want[1] - 1.5, (kind, top, bottom, want)
+    assert top <= want[0] + 1.5 or pad[0] > 0.35, (kind, top, bottom, want)
+    assert bottom <= want[1] + 1.5 or pad[1] > 0.35, (kind, top, bottom, want)
+
+
+def _quad(x0, y0, x1, y1):
+    return np.float32([(x0, y0), (x1, y0), (x1, y1), (x0, y1)])
+
+
+@pytest.mark.parametrize("polys, sides", [
+    ([], (True, True)),                                                # alone: more pad on both sides
+    ([_quad(80, 170, 250, 220)], (False, True)),                       # a text line over the top edge: top keeps 0.35
+    ([_quad(80, 230, 250, 270)], (True, False)),                       # ... over the bottom edge
+    ([_quad(80, 250, 250, 290)], (True, False)),                       # just below, within the bars pad's reach
+    ([_quad(60, 180, 450, 260)], (True, True)),                        # around both edges: the same code (route A)
+    ([_quad(80, 170, 250, 220), _quad(80, 230, 250, 270)], (True, True)),   # both sides taken: privacy first
+    ([_quad(80, 100, 250, 150)], (True, True)),                        # out of the bars pad's reach
+    ([_quad(420, 170, 500, 220)], (True, True)),                       # beside the box, not over it
+])
+def test_bar_sides(polys, sides):
+    """Hook: the barcode boxes overlap the cert line above them, so 0.6 x up went past the cert's own blur into
+    "MS 66" for most of the clip. A side that another blurred item already covers (it sticks out past that edge
+    only) keeps box_margin(); the other side gets BOX_PAD_BARS."""
+    assert _detect.bar_sides((100, 200, 300, 40), polys) == sides
+    T = [p[:, ::-1] for p in polys]                                      # the same, for a vertical box
+    assert _detect.bar_sides((200, 100, 40, 300), T) == sides
+
+
+@pytest.mark.parametrize("kind, bars", [("bars", True), ("text", False), (None, False)])
+def test_boxes_passes_the_item_kind_to_the_tracker(vids, tmp_path, monkeypatch, kind, bars):
+    """boxes.json: an item with "kind": "bars" is tracked as bars (see BOX_PAD_BARS); "text" or no kind = a text
+    line, as before."""
+    video, truth = vids["bar"]
+    kf = keyframes(tmp_path, video)
+    seen, real = [], _detect.track_anchors
+
+    def spy(*a, bars=False, **k):
+        seen.append(bars)
+        return real(*a, bars=bars, **k)
+
+    monkeypatch.setattr(_detect, "track_anchors", spy)
+    f = kf["frames"][0]
+    item = {"id": "code", "t": f["t"], "box": kf_box(truth[f["i"]][0], kf["scale"])}
+    if kind:
+        item["kind"] = kind
+    assert bt.main(["boxes", str(tmp_path), str(video), str(write_boxes(tmp_path / "b.json", [item]))]) == 0
+    assert seen == [{f["t"]: (True, True)} if bars else False]
+
+
+@pytest.mark.parametrize("same_file, twice", [(False, False), (True, False), (False, True)])
+def test_boxes_bars_keep_the_small_pad_toward_a_text_line(vids, tmp_path, monkeypatch, same_file, twice):
+    """Hook: the cert line was marked in one `boxes` call and the barcode in a later `boxes --add`, and the barcode
+    boxes overlapped the cert line. The side of the bars under the text line keeps the small pad (the line's own
+    blur is there); the other side gets BOX_PAD_BARS. Same when both are in one boxes.json, in either order.
+    twice: the same id twice at one time = the tracker keeps the first box, so its sides come from the first box."""
+    video, truth = vids["bar"]
+    kf = keyframes(tmp_path, video)
+    f = kf["frames"][0]
+    bx, by, bw, bh = kf_box(truth[f["i"]][0], kf["scale"], pad=0)
+    text = {"id": "line", "t": f["t"], "box": [bx, by, bw, 0.45 * bh]}                  # over the top of the bars
+    bars = {"id": "code", "t": f["t"], "box": [bx, by + 0.35 * bh, bw, 0.65 * bh], "kind": "bars"}
+    far = dict(bars, box=[bx, 10, bw, 0.65 * bh])                                        # nothing near it
+    assert 10 + 0.65 * bh < by - bh
+    seen, real = {}, _detect.track_anchors
+
+    def spy(*a, bars=False, **k):
+        if bars is not False:
+            seen["bars"] = bars
+        return real(*a, bars=bars, **k)
+
+    monkeypatch.setattr(_detect, "track_anchors", spy)
+    if same_file:
+        assert bt.main(["boxes", str(tmp_path), str(video), str(write_boxes(tmp_path / "b.json", [bars, text]))]) == 0
+    else:
+        assert bt.main(["boxes", str(tmp_path), str(video), str(write_boxes(tmp_path / "a.json", [text]))]) == 0
+        assert bt.main(["boxes", "--add", str(tmp_path), str(video),
+                        str(write_boxes(tmp_path / "b.json", [bars, far] if twice else [bars]))]) == 0
+    assert seen["bars"] == {f["t"]: (False, True)}
+
+
+def test_neighbour_polys_skip_held_and_lost_frames():
+    """A held frame repeats a target's last known polygon (it may have moved on), so it must not make bar_sides keep
+    the small pad on that side: only tracked and widened frames count, on that frame, of the other targets."""
+    P = [(0, 0), (9, 0), (9, 9), (0, 9)]
+    frames = [bt.FrameBox(5, P, 0.9, "tracked", 0), bt.FrameBox(5, P, 0.3, "widened", 1),
+              bt.FrameBox(5, P, 0.0, "held", 2), bt.FrameBox(5, None, 0.0, "lost", 3),
+              bt.FrameBox(6, P, 0.9, "tracked", 4)]
+    assert len(bt._neighbour_polys(frames, 5)) == 2
+
+
+def test_boxes_short_anchor_box_takes_the_line_from_its_neighbours(tmp_path):
+    """Real clip: on one keyframe the cert line ran off the frame edge (on another, glare hid its end), so that box
+    held only part of the line, and the frames tracked from it left the other digits sharp once they came back into
+    view. The line's length is carried over from the other anchors: every frame blurs every digit that is in frame."""
+    from fixtures_blur import CW, apply_pose, make_motion_video, slab_tile
+    tile, _, cert = slab_tile(gap=1.0)
+    th, tw = tile.shape
+    cw = float(cert[1, 0] - cert[0, 0])
+    mid = tw / 2 - float(cert[0, 0]) - 0.3 * cw                     # frame 30: the first 30 % of the line is off-frame
+    n = 61
+
+    def pose(f):
+        return mid + 170 * (1 - np.sin(np.pi * f / (n - 1))), 420, 1.0, 0
+
+    video = tmp_path / "edge.mp4"
+    A = make_motion_video(video, tile, pose, n=n)
+
+    def in_frame(q):
+        return np.float32([(min(max(x, 0), CW), y) for x, y in q])
+
+    kf = keyframes(tmp_path, video, "--every", "1")
+    assert [f["i"] for f in kf["frames"]] == [0, 30, 60]
+    items = [{"id": "cert", "t": f["t"], "box": kf_box(in_frame(apply_pose(A[f["i"]], cert)), kf["scale"], pad=0)}
+             for f in kf["frames"]]
+    r = run_cli("boxes", tmp_path, video, write_boxes(tmp_path / "b.json", items))
+    assert r.returncode == 0, r.stderr
+    P = polys_by_frame(tmp_path)
+    miss = [i for i in range(n) if not covered(P.get(i, []), in_frame(apply_pose(A[i], cert)))]
+    assert not miss, f"cert digits in frame but not covered on frames {miss}"
+
+
 def test_snap_to_ink_finds_the_line():
     from fixtures_blur import slab_tile
     tile, grade, cert = slab_tile()
@@ -460,7 +741,8 @@ def _ink_quad_of(tile):
                                          ({"t": 1.0, "box": [10, 10, 50, 50]}, "id"),
                                          ({"id": "x", "t": 1e400, "box": [10, 10, 50, 50]}, "t"),
                                          ({"id": "x", "t": 1.0, "box": "1234"}, "box"),
-                                         ({"id": "x", "t": 1.0, "box": [10, float("nan"), 50, 50]}, "box")])
+                                         ({"id": "x", "t": 1.0, "box": [10, float("nan"), 50, 50]}, "box"),
+                                         ({"id": "x", "t": 1.0, "box": [10, 10, 50, 50], "kind": "qr"}, "kind")])
 def test_boxes_malformed_exit2_names_field(vids, tmp_path, item, field):
     video, _ = vids["qr"]
     keyframes(tmp_path, video)
@@ -530,7 +812,7 @@ def test_track_anchors_skips_weak_anchor(monkeypatch, capsys):
         return [bt.FrameBox(round(t * 30), [(0, 0), (9, 0), (9, 9), (0, 9)], 1.0, "tracked")]
 
     monkeypatch.setattr(bt, "track_box", fake)
-    out = _detect.track_anchors(Path("v.mp4"), [(0.5, (0, 0, 9, 9)), (1.5, (0, 0, 9, 9)), (2.5, (0, 0, 9, 9))], size=(540, 960))
+    out = _detect.track_anchors(Path("v.mp4"), [(0.5, (0, 0, 9, 9)), (1.5, (0, 0, 9, 9)), (2.5, (0, 0, 9, 9))], size=(540, 960), verify=False)
     assert sorted(calls[-2:]) == [(0.5, 0, 2.5), (2.5, 0.5, None)]  # retry: windows rebuilt without the weak one
     assert [f.i for f in out] == [15, 75]
     assert "1.5" in capsys.readouterr().out
@@ -542,7 +824,7 @@ def test_track_anchors_all_weak_raises(monkeypatch):
 
     monkeypatch.setattr(bt, "track_box", fake)
     with pytest.raises(ValueError):
-        _detect.track_anchors(Path("v.mp4"), [(0.5, (0, 0, 9, 9)), (1.5, (0, 0, 9, 9))], size=(540, 960))
+        _detect.track_anchors(Path("v.mp4"), [(0.5, (0, 0, 9, 9)), (1.5, (0, 0, 9, 9))], size=(540, 960), verify=False)
 
 
 def test_track_anchors_single_weak_clean_message(monkeypatch):
@@ -551,7 +833,7 @@ def test_track_anchors_single_weak_clean_message(monkeypatch):
 
     monkeypatch.setattr(bt, "track_box", fake)
     with pytest.raises(bt.WeakTemplate) as e:
-        _detect.track_anchors(Path("v.mp4"), [(0.5, (0, 0, 9, 9))], size=(540, 960))
+        _detect.track_anchors(Path("v.mp4"), [(0.5, (0, 0, 9, 9))], size=(540, 960), verify=False)
     assert str(e.value) == "المرجع ما فيه تفاصيل كافية للتتبّع"
 
 
@@ -565,7 +847,7 @@ def test_track_anchors_retry_reuses_good_tracks(monkeypatch):
         return [bt.FrameBox(round(t * 30), [(0, 0), (9, 0), (9, 9), (0, 9)], 1.0, "tracked")]
 
     monkeypatch.setattr(bt, "track_box", fake)
-    _detect.track_anchors(Path("v.mp4"), [(t, (0, 0, 9, 9)) for t in (0.5, 1.5, 2.5, 3.5)], size=(540, 960))
+    _detect.track_anchors(Path("v.mp4"), [(t, (0, 0, 9, 9)) for t in (0.5, 1.5, 2.5, 3.5)], size=(540, 960), verify=False)
     assert calls.count((0.5, 0, 1.5)) == 1 and calls.count((1.5, 0.5, 2.5)) == 1, calls
 
 

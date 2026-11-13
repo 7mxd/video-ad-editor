@@ -26,9 +26,15 @@ DUP_IOU = 0.5         # same code found at two scales
 BOX_PAD_MIN = 6       # route B: a subagent's box hugs the text, so every side grows by the largest of
 BOX_PAD_SHORT = 0.35  #   6 px, 0.35 x the box's short side, 0.04 x its long side (in video pixels)
 BOX_PAD_LONG = 0.04
+BOX_PAD_BARS = 0.6    # a box marked "bars": bars look alike at every height, so a tracked box slides short of their
+                      #   ends at no cost (Hook 13.33 s: 0.27 x short); across the bars only, along them as above
 TRACK_GROW = 1.0      # route B: track a patch this many short sides taller above and below the box (a tight
                       #   text box alone has too few features), then map the result back onto the box
 LINE_RATIO = 3        # snapping and the taller patch apply only to a text line: long side >= 3 x short side
+MATCH_MIN = 0.5       # route B: a tracked frame counts only if, warped back, it matches its anchor's patch this well
+SEARCH_NEAR = 0.08    # re-detect around a tracked patch: this x its long side (+3 px) in every direction
+SEARCH_GAP = 0.3      #   around a predicted patch (frames the tracker lost or got wrong), plus one frame's motion
+ECC_SHAPE = 0.08      # ECC may turn and move the patch, but not stretch either side by more than this
 
 
 _DET = {}
@@ -316,6 +322,49 @@ def box_margin(bw, bh):
     return max(BOX_PAD_MIN, BOX_PAD_SHORT * min(bw, bh), BOX_PAD_LONG * max(bw, bh))
 
 
+def box_pads(bw, bh, bars=False):
+    """(left, top, right, bottom) pixels added to a route-B box: box_margin() on every side. bars: True, or which
+    sides across the bars (the short side's direction) get at least BOX_PAD_BARS x the short side: (top, bottom)
+    for a box wider than tall, (left, right) for a taller one (see bar_sides)."""
+    m = box_margin(bw, bh)
+    if bars is False or bars is None:
+        return m, m, m, m
+    lo, hi = (True, True) if bars is True else bars
+    b = max(m, BOX_PAD_BARS * min(bw, bh))
+    lo, hi = (b if lo else m), (b if hi else m)
+    return (m, lo, m, hi) if bw >= bh else (lo, m, hi, m)
+
+
+def bar_sides(box, polys):
+    """Which sides across the bars of a "bars" box get BOX_PAD_BARS: (top, bottom), or (left, right) for a box taller
+    than wide. A side that another blurred item already covers keeps box_margin(): a polygon (frame pixels, same
+    frame) over the box along the bars' row, within the bars pad's reach, that sticks out past that side only (Hook:
+    the cert line over the barcode box's top; 0.6 x up went past the cert's blur into the grade line). One that
+    sticks out past both sides or neither is the same code (route A) and does not count; both sides taken = both
+    get BOX_PAD_BARS (privacy first)."""
+    x, y, bw, bh = box
+    ax = 1 if bw >= bh else 0                                            # across the bars: the short side's axis
+    lo, hi = (y, y + bh) if ax else (x, x + bw)
+    l0, l1 = (x, x + bw) if ax else (y, y + bh)
+    reach = BOX_PAD_BARS * min(bw, bh)
+    taken = [False, False]
+    for q in polys:
+        q = np.asarray(q, np.float32).reshape(-1, 2)
+        a0, a1 = float(q[:, ax].min()), float(q[:, ax].max())
+        b0, b1 = float(q[:, 1 - ax].min()), float(q[:, 1 - ax].max())
+        if b1 <= l0 or b0 >= l1 or a1 <= lo - reach or a0 >= hi + reach:
+            continue                                                     # beside the box, or out of reach
+        up, down = a0 < lo, a1 > hi
+        if up != down:
+            taken[0 if up else 1] = True
+    return (True, True) if all(taken) else (not taken[0], not taken[1])
+
+
+def _sides(bars, t):
+    """track_anchors' bars for the anchor at t: a bool for every anchor, or {t: (lo, hi)} from bar_sides."""
+    return bars.get(t, True) if isinstance(bars, dict) else bars
+
+
 def map_rect(q, bw, bh, r):
     """The rect r = (x0, y0, x1, y1), in the pixels of a (bw x bh) box tracked onto quad q, as a frame quad."""
     q = np.asarray(q, np.float32).reshape(4, 2)
@@ -384,16 +433,19 @@ def track_patch(box, w, h):
     return x0, y0, x1 - x0, y1 - y0
 
 
-def track_anchors(video, anchors, t0=0, t1=None, pad=True, size=None):
+def track_anchors(video, anchors, t0=0, t1=None, pad=True, size=None, verify=True, bars=False):
     """One item marked on several keyframes: track_box from each (t, (x, y, w, h)) and keep, per frame, a found
     polygon over a lost one and the higher confidence among found ones. Trimmed to the item's own span.
-    pad: grow each polygon by box_margin() of its anchor box (the box is tracked tight, the blur reaches past it).
-    size: the video's (w, h), when the caller has it (saves a probe)."""
+    pad: grow each polygon by box_pads() of its anchor box (the box is tracked tight, the blur reaches past it).
+    bars: the item is barcode bars (boxes.json "kind": "bars"): more pad across the bars (see BOX_PAD_BARS); True for
+    both sides, or {t: (lo, hi)} per anchor (see bar_sides).
+    size: the video's (w, h), when the caller has it (saves a probe).
+    verify: check every tracked frame against its anchor and re-detect the ones that fail (see verify_track)."""
     anchors = sorted({t: box for t, box in reversed(anchors)}.items())   # one anchor per time, in order
     cache = {}                                                           # (t, from, to) -> track
     while True:
         try:
-            return _track_anchors(video, anchors, t0, t1, pad, cache, size)
+            return _track_anchors(video, anchors, t0, t1, pad, cache, size, verify, bars)
         except bt.WeakTemplate as e:
             # a soft keyframe (motion blur) has too few features: track from the other anchors instead
             bad = getattr(e, "t", None)
@@ -403,17 +455,17 @@ def track_anchors(video, anchors, t0=0, t1=None, pad=True, size=None):
             anchors = [a for a in anchors if a[0] != bad]
 
 
-def _track_anchors(video, anchors, t0, t1, pad, cache, size):
+def _track_anchors(video, anchors, t0, t1, pad, cache, size, verify=False, bars=False):
     w, h = size or bt.probe(Path(video))[:2]
     best = {}
     for k, (t, box) in enumerate(anchors):
         # each anchor covers up to its neighbours only: SIFT runs ~2x the item's span, not once per anchor
         a = max(t0, anchors[k - 1][0]) if k else t0
         b = anchors[k + 1][0] if k + 1 < len(anchors) else t1
-        m = box_margin(box[2], box[3]) if pad else 0
+        pl, pt, pr, pb = box_pads(box[2], box[3], _sides(bars, t)) if pad else (0, 0, 0, 0)
         px, py, pw, ph = track_patch(box, w, h)
         # the padded box in the tracked patch's own pixels
-        r = (box[0] - px - m, box[1] - py - m, box[0] + box[2] - px + m, box[1] + box[3] - py + m)
+        r = (box[0] - px - pl, box[1] - py - pt, box[0] + box[2] - px + pr, box[1] + box[3] - py + pb)
         if (t, a, b) not in cache:
             try:
                 cache[(t, a, b)] = bt.track_box(Path(video), t, (px, py, pw, ph), a, b)
@@ -421,6 +473,8 @@ def _track_anchors(video, anchors, t0, t1, pad, cache, size):
                 e.t = t                                                  # which anchor, for the retry
                 raise
         track = cache[(t, a, b)]
+        if verify:
+            continue
         for f in track:
             if f.poly is not None:
                 f = bt.replace(f, poly=bt._plist(map_rect(f.poly, pw, ph, r)))
@@ -428,7 +482,208 @@ def _track_anchors(video, anchors, t0, t1, pad, cache, size):
             if cur is None or (cur.state == "lost" and f.state != "lost") \
                     or (f.state != "lost" and cur.state != "lost" and f.conf > cur.conf):
                 best[f.i] = f
+    if verify:
+        tracks = [cache[(t, max(t0, anchors[k - 1][0]) if k else t0,
+                         anchors[k + 1][0] if k + 1 < len(anchors) else t1)] for k, (t, _) in enumerate(anchors)]
+        best = {f.i: f for f in verify_track(video, anchors, tracks, w, h, pad, bars)}
     out = [best[i] for i in sorted(best)]
     found = [k for k, f in enumerate(out) if f.state != "lost"]
     # the item's own span only: before it first shows / after it last shows is not "lost" (same as route A)
     return out[found[0]:found[-1] + 1] if found else out
+
+
+# ---- route B: check each tracked frame, re-detect the rest ---------------------------------------------------------
+def _xy(dx, dy):
+    return np.array([[1, 0, dx], [0, 1, dy], [0, 0, 1]], np.float64)
+
+
+def _streak(tpl, v):
+    """The template smeared along v (pixels per frame), like a frame shot while the camera moved by v."""
+    n = float(np.hypot(*v))
+    if n < 2:
+        return tpl
+    k = int(np.ceil(n)) | 1
+    ker = np.zeros((k, k), np.float32)
+    d = np.asarray(v, float) / n
+    for u in np.linspace(-n / 2, n / 2, 4 * k):
+        ker[int(round(k // 2 + d[1] * u)), int(round(k // 2 + d[0] * u))] = 1
+    return cv2.filter2D(tpl, -1, ker / ker.sum())
+
+
+def refine(gray, tpl, H, S, v=(0, 0)):
+    """H maps the template's pixels into the frame. Search +-S template pixels around it (normalised correlation),
+    then let ECC fix scale and rotation. Returns (H, score): score is the match of the warped-back frame against the
+    template, smeared along v (template pixels per frame) when the frame is motion-blurred."""
+    th, tw = tpl.shape
+    tb = _streak(tpl, v)
+    win = cv2.warpPerspective(gray, H @ _xy(-S, -S), (tw + 2 * S, th + 2 * S),
+                              flags=cv2.WARP_INVERSE_MAP | cv2.INTER_LINEAR).astype(np.float32)
+    _, sc, _, loc = cv2.minMaxLoc(cv2.matchTemplate(win, tb, cv2.TM_CCOEFF_NORMED))
+    H = H @ _xy(loc[0] - S, loc[1] - S)
+    try:
+        img = cv2.warpPerspective(gray, H, (tw, th), flags=cv2.WARP_INVERSE_MAP | cv2.INTER_LINEAR).astype(np.float32)
+        _, A = cv2.findTransformECC(tb, img, np.eye(2, 3, dtype=np.float32), cv2.MOTION_AFFINE,
+                                    (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 50, 1e-4), None, 5)
+        H2 = H @ np.vstack([A, [0, 0, 1]]).astype(np.float64)
+        if np.abs(np.linalg.norm(A[:, :2], axis=0) - 1).max() > ECC_SHAPE:         # a stretch, not a move (bars, glare)
+            return H, float(sc)
+        img = cv2.warpPerspective(gray, H2, (tw, th), flags=cv2.WARP_INVERSE_MAP | cv2.INTER_LINEAR).astype(np.float32)
+        s2 = float(cv2.matchTemplate(img, tb, cv2.TM_CCOEFF_NORMED)[0, 0])
+        if s2 >= sc:
+            return H2, s2
+    except cv2.error:                                                    # ECC did not converge: keep the shift
+        pass
+    return H, float(sc)
+
+
+def _rigid(B, q):
+    """The anchor's box B moved, scaled and turned to fit q best (least squares): the tracker gives where the box is,
+    how big and how turned; its shape stays the anchor's. On motion-blurred frames SIFT and ECC return boxes that are
+    stretched or sheared and still match (bars look the same at every height), so their shape is not trusted."""
+    b, z = B[:, 0] + 1j * B[:, 1], q[:, 0] + 1j * q[:, 1]
+    bc, zc = b - b.mean(), z - z.mean()
+    r = z.mean() + (np.vdot(bc, zc) / max(np.vdot(bc, bc).real, 1e-9)) * bc
+    return np.float32(np.stack([r.real, r.imag], 1))
+
+
+def verify_track(video, anchors, tracks, w, h, pad=True, bars=False):
+    """SIFT drifts on fast, motion-blurred moves while still reporting high confidence, and the template-matched run
+    ends follow a shift only. So every tracked frame is checked again: warp it back onto its anchor's patch (search a
+    little around it, ECC for scale and rotation) and keep it only if the match reaches MATCH_MIN. Frames left
+    without a match are re-detected from the motion of their verified neighbours, from both sides, against a
+    template smeared by that motion: between two verified frames every frame is tried; past the first and the last
+    only up to bt.EXTEND frames, until the first miss. conf = the match score. Returns FrameBoxes over the tracks'
+    span. anchors: [(t, box)] in video pixels; tracks: track_box's output for each, in the same order."""
+    video = Path(video)
+    s = bt._detect_scale(video)
+    sw, sh = max(round(w * s), 1), max(round(h * s), 1)
+
+    def small(g):
+        return cv2.resize(g, (sw, sh), interpolation=cv2.INTER_AREA) if s != 1 else g
+
+    fps = bt.probe(video)[2]
+    idx = [round(t * fps) for t, _ in anchors]
+    grab = dict(bt.read_frames(video, w, h, select=sorted(set(idx))))
+    A = []
+    for (t, box), ai, tr in zip(anchors, idx, tracks):
+        px, py, pw, ph = track_patch(box, w, h)
+        tw, th = max(round(pw * s), 1), max(round(ph * s), 1)
+        tpl = cv2.resize(grab[ai][py:py + ph, px:px + pw], (tw, th), interpolation=cv2.INTER_AREA).astype(np.float32)
+        B = (np.float32([(box[0], box[1]), (box[0] + box[2], box[1]), (box[0] + box[2], box[1] + box[3]),
+                         (box[0], box[1] + box[3])]) - np.float32([px, py])) * np.float32([tw / pw, th / ph])
+        A.append(dict(i=ai, box=box, tpl=tpl, B=B, P=np.float32([(0, 0), (tw, 0), (tw, th), (0, th)]),
+                      tr={f.i: np.float32(f.poly) * s for f in tr if f.poly is not None and f.state != "lost"},
+                      S=np.array([[pw * s / tw, 0, px * s], [0, ph * s / th, py * s], [0, 0, 1]]),
+                      ax=0 if box[2] >= box[3] else 1, sides=_sides(bars, t)))
+    for a in A:                                                          # the line's extent along its long side
+        a["ext"] = [float(a["B"][:, a["ax"]].min()), float(a["B"][:, a["ax"]].max())]
+    _carry_extent(A, {i: small(g) for i, g in grab.items()})
+    del grab
+    span = [f.i for tr in tracks for f in tr]
+    lo, hi = min(span), max(span) + 1
+
+    def quad(a, H):                                                      # the box, in (scaled) frame pixels
+        return cv2.perspectiveTransform(a["B"].reshape(-1, 1, 2), H).reshape(-1, 2)
+
+    res = {}                                                             # i -> (box quad, score, anchor)
+    for i, g in bt.read_frames(video, w, h, select=sorted({i for a in A for i in a["tr"]})):
+        g = small(g)
+        for a in A:
+            if i in a["tr"]:
+                th, tw = a["tpl"].shape
+                H0 = cv2.getPerspectiveTransform(a["P"], a["tr"][i]).astype(np.float64)
+                H, sc = refine(g, a["tpl"], H0, int(SEARCH_NEAR * max(th, tw)) + 3)
+                if sc >= MATCH_MIN and (i not in res or sc > res[i][1]):
+                    res[i] = (_rigid(a["B"], quad(a, H)), sc, a)
+    if not res:
+        return [bt.FrameBox(i, None, 0.0, "lost") for i in range(lo, hi)]
+    known = sorted(res)
+    gaps = {i for i in range(known[0], known[-1]) if i not in res}
+    gaps |= set(range(max(lo, known[0] - bt.EXTEND), known[0]))
+    gaps |= set(range(known[-1] + 1, min(hi, known[-1] + 1 + bt.EXTEND)))
+    G = {i: small(g) for i, g in bt.read_frames(video, w, h, select=sorted(gaps))} if gaps else {}
+
+    def chain(start, step):
+        """Follow the box from a verified frame into the frames after it (step 1) or before it (step -1)."""
+        out = {}
+        q, _, a = res[start]                                             # one anchor per chain: q is its box
+        th, tw = a["tpl"].shape
+        v = q - res[start - step][0] if start - step in res and res[start - step][2] is a else np.zeros_like(q)
+        j = start + step
+        while j in G and j not in res:
+            Hp = cv2.getPerspectiveTransform(a["B"], np.float32(q + v)).astype(np.float64)
+            vp = v.mean(0) / max(np.sqrt(abs(np.linalg.det(Hp[:2, :2]))), 1e-6)   # the motion in template pixels
+            H, sc = refine(G[j], a["tpl"], Hp, int(SEARCH_GAP * max(th, tw) + np.hypot(*vp)) + 3, vp)
+            if sc >= MATCH_MIN:
+                nq = _rigid(a["B"], quad(a, H))
+                v, q = nq - q, nq
+                out[j] = (q, sc, a)
+            elif known[0] < j < known[-1]:
+                q = q + v                                                # keep moving: a later frame may match
+            else:
+                break
+            j += step
+        return out
+
+    found = {}
+    for k in known:
+        for step in (1, -1):
+            if k + step not in res:
+                for j, r in chain(k, step).items():
+                    if j not in found or r[1] > found[j][1]:
+                        found[j] = r
+    res.update(found)
+    out = []
+    for i in range(lo, hi):
+        if i not in res:
+            out.append(bt.FrameBox(i, None, 0.0, "lost"))
+            continue
+        q, sc, a = res[i]
+        H = cv2.getPerspectiveTransform(a["B"], np.float32(q))
+        pl, pt, pr, pb = box_pads(a["box"][2], a["box"][3], a["sides"]) if pad else (0, 0, 0, 0)
+        kx, ky = s / a["S"][0, 0], s / a["S"][1, 1]                       # video pixels -> template pixels
+        pl, pr, pt, pb = pl * kx, pr * kx, pt * ky, pb * ky
+        (x0, y0), (x1, y1) = a["B"].min(0), a["B"].max(0)
+        if a["ax"] == 0:
+            x0, x1 = a["ext"]
+        else:
+            y0, y1 = a["ext"]
+        r = np.float32([(x0 - pl, y0 - pt), (x1 + pr, y0 - pt), (x1 + pr, y1 + pb), (x0 - pl, y1 + pb)])
+        poly = cv2.perspectiveTransform(r.reshape(-1, 1, 2), H).reshape(-1, 2) / s
+        out.append(bt.FrameBox(i, bt._plist(poly), round(sc, 3), "tracked"))
+    return out
+
+
+def _carry_extent(A, frames):
+    """An anchor box can hold only part of the line (it ran off the frame edge, or glare hid its end) while its
+    neighbours saw all of it. Warp each anchor's patch onto its neighbour's keyframe (from the neighbour's track),
+    and if it matches, widen both boxes along the line to the union of their extents; a sweep each way carries an
+    extent along the whole chain. Never across the line, so a nearby line stays sharp. Mutates each anchor's "ext"."""
+    longest = max(a["ext"][1] - a["ext"][0] for a in A)
+    pairs = []
+    for a, b in zip(A, A[1:]):                                           # b's track starts at a's keyframe
+        if a["i"] not in b["tr"] or a["i"] not in frames:
+            continue
+        th, tw = b["tpl"].shape
+        H0 = cv2.getPerspectiveTransform(b["P"], b["tr"][a["i"]]).astype(np.float64)
+        H, sc = refine(frames[a["i"]], b["tpl"], H0, int(SEARCH_NEAR * max(th, tw)) + 3)
+        if sc >= MATCH_MIN:
+            M = np.linalg.inv(a["S"]) @ H                                # b's template -> a's template
+            pairs.append((a, b, M))
+
+    def take(dst, src, M):                                               # src's extent, seen in dst's template
+        (x0, y0), (x1, y1) = src["B"].min(0), src["B"].max(0)
+        if src["ax"] == 0:
+            x0, x1 = src["ext"]
+        else:
+            y0, y1 = src["ext"]
+        q = cv2.perspectiveTransform(np.float32([(x0, y0), (x1, y0), (x1, y1), (x0, y1)]).reshape(-1, 1, 2),
+                                     M).reshape(-1, 2)[:, dst["ax"]]
+        lo, hi = min(dst["ext"][0], float(q.min())), max(dst["ext"][1], float(q.max()))
+        if hi - lo <= 2 * longest:                                       # a wild warp is ignored, not trusted
+            dst["ext"] = [lo, hi]
+
+    for a, b, M in pairs:
+        take(b, a, np.linalg.inv(M))
+    for a, b, M in reversed(pairs):
+        take(a, b, M)

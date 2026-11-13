@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.1.3 — 2026-11-13
+
+### Added
+
+- **Barcode bars in a route B box:** an item in `boxes.json` can say `"kind": "bars"` (default `"text"`; any other value exits 2 naming `kind`). Bars look alike at every height, so a tracked box can slide short of them. A `bars` box grows by 0.6 × its short side across the bars (`BOX_PAD_BARS`), except on a side another blurred target already covers: that side keeps the normal margin, so a text line next to the barcode stays as sharp as before. When both sides are covered, both get 0.6 × (privacy first). `boxes` tracks text items first and bars items last, so it knows where the text lines are.
+
+### Fixed
+
+- **Tracker drift on fast, motion-blurred moves:** every tracked frame is now checked against its anchor (warped back, normalised correlation ≥ 0.5). A frame that fails is found again from the motion of its checked neighbours, against a template smeared by that motion. Before, the tracker drifted while still reporting high confidence.
+- **An anchor box that holds only part of the line** (it ran off the frame edge, or glare hid its end): its neighbours' extent is carried to it, along the line only, so a nearby line stays sharp.
+- **A box stretched by ECC:** ECC may move and turn the patch, but not stretch either side by more than 8 %. On bars it had stretched boxes by up to 60 %.
+- **A box whose shape went wrong between anchors:** each frame uses the anchor's box moved, scaled and turned to fit the tracked patch, not the patch's own shape.
+- **Bar sides on a repeated time:** when two boxes of one item share a `t`, the first one wins, for its bar sides too. Only tracked or widened frames count as neighbours when choosing bar sides (held and lost frames don't).
+
+### Not changed
+
+- The text-line margin stays at 0.35 × the short side. On the real clip, the line just above the barcode is still blurred on part of the clip because of the certificate's own margin.
+
 ## 1.1.2 — 2026-11-09
 
 ### Fixed
