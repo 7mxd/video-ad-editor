@@ -342,13 +342,19 @@ def bar_sides(box, polys):
     the cert line over the barcode box's top; 0.6 x up went past the cert's blur into the grade line). One that
     sticks out past both sides or neither is the same code (route A) and does not count; both sides taken = both
     get BOX_PAD_BARS (privacy first)."""
+    lo, hi = bar_takers(box, polys)
+    return (True, True) if lo and hi else (not lo, not hi)
+
+
+def bar_takers(box, polys):
+    """bar_sides' polygons: ([indices of polys that cover the top side], [... the bottom]), or left/right."""
     x, y, bw, bh = box
     ax = 1 if bw >= bh else 0                                            # across the bars: the short side's axis
     lo, hi = (y, y + bh) if ax else (x, x + bw)
     l0, l1 = (x, x + bw) if ax else (y, y + bh)
     reach = BOX_PAD_BARS * min(bw, bh)
-    taken = [False, False]
-    for q in polys:
+    taken = ([], [])
+    for k, q in enumerate(polys):
         q = np.asarray(q, np.float32).reshape(-1, 2)
         a0, a1 = float(q[:, ax].min()), float(q[:, ax].max())
         b0, b1 = float(q[:, 1 - ax].min()), float(q[:, 1 - ax].max())
@@ -356,8 +362,50 @@ def bar_sides(box, polys):
             continue                                                     # beside the box, or out of reach
         up, down = a0 < lo, a1 > hi
         if up != down:
-            taken[0 if up else 1] = True
-    return (True, True) if all(taken) else (not taken[0], not taken[1])
+            taken[0 if up else 1].append(k)
+    return taken
+
+
+def clip_bars(poly, line, side, quad=None, wide=None, depth=None):
+    """A bars polygon without its part past the outer edge of a text line that covers its side (0: top, 1: bottom;
+    left/right for a box taller than wide), cut along that edge and the line's length only (Hook: the tall bars box reached past
+    the cert line's own blur into "MS 66" on 86 of 303 frames). quad: the bars' tracked quad, for its axes, when
+    poly was clipped already. wide: the anchor box is wider than tall (default: the quad's own edges, which a pad
+    across a near-square box can flip). depth: the deepest cut, as a fraction of the quad across the bars (its pad
+    on that side), so a line tracked low in the box cannot uncover the bars. Unchanged when the line's edge is not
+    inside the bars polygon; the cut grows back 2 px (privacy first)."""
+    p = np.asarray(poly, np.float32).reshape(-1, 2)
+    q = np.asarray(p if quad is None else quad, np.float32).reshape(-1, 2)
+    e1, e3 = q[1] - q[0], q[3] - q[0]
+    if wide is None:
+        wide = np.linalg.norm(e1) >= np.linalg.norm(e3)
+    along, across = (e1, e3) if wide else (e3, e1)
+    u, v = along / np.linalg.norm(along), across / np.linalg.norm(across)
+    L = np.asarray(line, np.float32).reshape(-1, 2)
+    pa, la = (p - q[0]) @ v, (L - q[0]) @ v
+    lo, hi = float(pa.min()), float(pa.max())
+    k = np.argsort(la)[:2] if side == 0 else np.argsort(la)[-2:]        # the line's outer edge: its 2 outer corners
+    a, b = L[k[0]], L[k[1]]
+    if depth is not None:                                                # no deeper than the bars' pad on that side
+        qa = (q - q[0]) @ v
+        cap = qa.min() + depth * np.ptp(qa) if side == 0 else qa.max() - depth * np.ptp(qa)
+        a, b = (c - v * max(0.0, (c - q[0]) @ v - cap) if side == 0 else c + v * max(0.0, cap - (c - q[0]) @ v)
+                for c in (a, b))
+    e = np.array([(a - q[0]) @ v, (b - q[0]) @ v])
+    if not (e.max() > lo + 1 and e.min() < hi if side == 0 else e.min() < hi - 1 and e.max() > lo):
+        return p                                                         # the edge is past the bars' side: nothing
+    w = v * (hi - lo + 10) * (-1 if side == 0 else 1)                    # out past the bars' side
+    notch = np.float32([a, b, b + w, a + w])
+    o = np.floor(p.min(0)) - 3
+    W, H = (np.ceil(p.max(0)) - o + 4).astype(int)
+    m = np.zeros((H, W), np.uint8)
+    cv2.fillPoly(m, [np.round(p - o).astype(np.int32)], 255)
+    cv2.fillPoly(m, [np.round(notch - o).astype(np.int32)], 0)
+    m = cv2.dilate(m, np.ones((5, 5), np.uint8))
+    cs, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if len(cs) != 1:
+        return p                                                         # cut in two: keep the whole box
+    return (cv2.approxPolyDP(cs[0], 1.5, True).reshape(-1, 2) + o).astype(np.float32)
 
 
 def _sides(bars, t):
@@ -433,19 +481,21 @@ def track_patch(box, w, h):
     return x0, y0, x1 - x0, y1 - y0
 
 
-def track_anchors(video, anchors, t0=0, t1=None, pad=True, size=None, verify=True, bars=False):
+def track_anchors(video, anchors, t0=0, t1=None, pad=True, size=None, verify=True, bars=False, sizes=None):
     """One item marked on several keyframes: track_box from each (t, (x, y, w, h)) and keep, per frame, a found
     polygon over a lost one and the higher confidence among found ones. Trimmed to the item's own span.
     pad: grow each polygon by box_pads() of its anchor box (the box is tracked tight, the blur reaches past it).
     bars: the item is barcode bars (boxes.json "kind": "bars"): more pad across the bars (see BOX_PAD_BARS); True for
     both sides, or {t: (lo, hi)} per anchor (see bar_sides).
     size: the video's (w, h), when the caller has it (saves a probe).
-    verify: check every tracked frame against its anchor and re-detect the ones that fail (see verify_track)."""
+    verify: check every tracked frame against its anchor and re-detect the ones that fail (see verify_track).
+    sizes: {t: (w, h)} the boxes as marked, before snap_to_ink, for box_pads (Hook: the snap grew the cert boxes
+    into the barcode below, and their margin grew up into the grade line); default each anchor's own box."""
     anchors = sorted({t: box for t, box in reversed(anchors)}.items())   # one anchor per time, in order
     cache = {}                                                           # (t, from, to) -> track
     while True:
         try:
-            return _track_anchors(video, anchors, t0, t1, pad, cache, size, verify, bars)
+            return _track_anchors(video, anchors, t0, t1, pad, cache, size, verify, bars, sizes)
         except bt.WeakTemplate as e:
             # a soft keyframe (motion blur) has too few features: track from the other anchors instead
             bad = getattr(e, "t", None)
@@ -455,14 +505,19 @@ def track_anchors(video, anchors, t0=0, t1=None, pad=True, size=None, verify=Tru
             anchors = [a for a in anchors if a[0] != bad]
 
 
-def _track_anchors(video, anchors, t0, t1, pad, cache, size, verify=False, bars=False):
+def _size(sizes, t, box):
+    """box_pads' (w, h) for the anchor at t: the box as marked when given (see track_anchors' sizes)."""
+    return tuple((sizes or {}).get(t, box[2:4]))
+
+
+def _track_anchors(video, anchors, t0, t1, pad, cache, size, verify=False, bars=False, sizes=None):
     w, h = size or bt.probe(Path(video))[:2]
     best = {}
     for k, (t, box) in enumerate(anchors):
         # each anchor covers up to its neighbours only: SIFT runs ~2x the item's span, not once per anchor
         a = max(t0, anchors[k - 1][0]) if k else t0
         b = anchors[k + 1][0] if k + 1 < len(anchors) else t1
-        pl, pt, pr, pb = box_pads(box[2], box[3], _sides(bars, t)) if pad else (0, 0, 0, 0)
+        pl, pt, pr, pb = box_pads(*_size(sizes, t, box), _sides(bars, t)) if pad else (0, 0, 0, 0)
         px, py, pw, ph = track_patch(box, w, h)
         # the padded box in the tracked patch's own pixels
         r = (box[0] - px - pl, box[1] - py - pt, box[0] + box[2] - px + pr, box[1] + box[3] - py + pb)
@@ -485,7 +540,7 @@ def _track_anchors(video, anchors, t0, t1, pad, cache, size, verify=False, bars=
     if verify:
         tracks = [cache[(t, max(t0, anchors[k - 1][0]) if k else t0,
                          anchors[k + 1][0] if k + 1 < len(anchors) else t1)] for k, (t, _) in enumerate(anchors)]
-        best = {f.i: f for f in verify_track(video, anchors, tracks, w, h, pad, bars)}
+        best = {f.i: f for f in verify_track(video, anchors, tracks, w, h, pad, bars, sizes)}
     out = [best[i] for i in sorted(best)]
     found = [k for k, f in enumerate(out) if f.state != "lost"]
     # the item's own span only: before it first shows / after it last shows is not "lost" (same as route A)
@@ -546,7 +601,7 @@ def _rigid(B, q):
     return np.float32(np.stack([r.real, r.imag], 1))
 
 
-def verify_track(video, anchors, tracks, w, h, pad=True, bars=False):
+def verify_track(video, anchors, tracks, w, h, pad=True, bars=False, sizes=None):
     """SIFT drifts on fast, motion-blurred moves while still reporting high confidence, and the template-matched run
     ends follow a shift only. So every tracked frame is checked again: warp it back onto its anchor's patch (search a
     little around it, ECC for scale and rotation) and keep it only if the match reaches MATCH_MIN. Frames left
@@ -574,7 +629,7 @@ def verify_track(video, anchors, tracks, w, h, pad=True, bars=False):
         A.append(dict(i=ai, box=box, tpl=tpl, B=B, P=np.float32([(0, 0), (tw, 0), (tw, th), (0, th)]),
                       tr={f.i: np.float32(f.poly) * s for f in tr if f.poly is not None and f.state != "lost"},
                       S=np.array([[pw * s / tw, 0, px * s], [0, ph * s / th, py * s], [0, 0, 1]]),
-                      ax=0 if box[2] >= box[3] else 1, sides=_sides(bars, t)))
+                      ax=0 if box[2] >= box[3] else 1, sides=_sides(bars, t), size=_size(sizes, t, box)))
     for a in A:                                                          # the line's extent along its long side
         a["ext"] = [float(a["B"][:, a["ax"]].min()), float(a["B"][:, a["ax"]].max())]
     _carry_extent(A, {i: small(g) for i, g in grab.items()})
@@ -640,7 +695,7 @@ def verify_track(video, anchors, tracks, w, h, pad=True, bars=False):
             continue
         q, sc, a = res[i]
         H = cv2.getPerspectiveTransform(a["B"], np.float32(q))
-        pl, pt, pr, pb = box_pads(a["box"][2], a["box"][3], a["sides"]) if pad else (0, 0, 0, 0)
+        pl, pt, pr, pb = box_pads(*a["size"], a["sides"]) if pad else (0, 0, 0, 0)
         kx, ky = s / a["S"][0, 0], s / a["S"][1, 1]                       # video pixels -> template pixels
         pl, pr, pt, pb = pl * kx, pr * kx, pt * ky, pb * ky
         (x0, y0), (x1, y1) = a["B"].min(0), a["B"].max(0)

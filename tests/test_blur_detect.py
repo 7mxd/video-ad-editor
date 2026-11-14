@@ -683,6 +683,132 @@ def test_neighbour_polys_skip_held_and_lost_frames():
     assert len(bt._neighbour_polys(frames, 5)) == 2
 
 
+def test_track_anchors_margin_from_the_box_as_marked(tmp_path):
+    """Hook: snap_to_ink grew the cert boxes from 75 to 96-107 px tall at 5 of 10 anchors (into the barcode below),
+    and the 0.35 x margin grew with them, up into "MS 66". sizes: the boxes as marked, for the margin; the snapped
+    box is still what is tracked and covered."""
+    from fixtures_blur import apply_pose, make_motion_video, slab_tile
+    tile, _, ink = slab_tile(gap=1.0)
+    video = tmp_path / "cert.mp4"
+    A = make_motion_video(video, tile, lambda f: (270 + 4 * f, 400 + 6 * f, 1.0, 0), n=11)
+    anchors = []
+    for i in (0, 10):
+        q = apply_pose(A[i], ink)
+        (x0, y0), (x1, y1) = q.min(0), q.max(0)
+        anchors.append((i / 30, (int(x0), int(y0), int(np.ceil(x1 - x0)), int(np.ceil(y1 - y0)))))
+    _, (x, y, bw, bh) = anchors[0]
+    sizes = {t: (b[2], 0.6 * b[3]) for t, b in anchors}
+    for sz, want in ((None, _detect.box_margin(bw, bh)), (sizes, _detect.box_margin(bw, 0.6 * bh))):
+        out = {f.i: np.float32(f.poly) for f in _detect.track_anchors(video, anchors, sizes=sz) if f.poly is not None}
+        top, bottom = y - out[0][:, 1].min(), out[0][:, 1].max() - (y + bh)
+        assert abs(top - want) <= 1.5 and abs(bottom - want) <= 1.5, (sz is None, top, bottom, want)
+
+
+@pytest.mark.parametrize("kind", ["text", "bars"])
+def test_boxes_margin_from_the_text_box_as_marked(vids, tmp_path, monkeypatch, kind):
+    """boxes passes the text boxes as marked (before snap_to_ink) for the margin; bars keep the snapped box's pads
+    (BOX_PAD_BARS was tuned on them, privacy first)."""
+    video, truth = vids["bar"]
+    kf = keyframes(tmp_path, video)
+    f = kf["frames"][0]
+    item = {"id": "code", "t": f["t"], "box": kf_box(truth[f["i"]][0], kf["scale"], pad=0)}
+    if kind == "bars":
+        item["kind"] = "bars"
+    seen, real = [], _detect.track_anchors
+
+    def spy(*a, sizes=None, **k):
+        seen.append(sizes)
+        return real(*a, sizes=sizes, **k)
+
+    monkeypatch.setattr(_detect, "track_anchors", spy)
+    monkeypatch.setattr(_detect, "snap_to_ink", lambda img, box: (box[0], box[1], box[2], box[3] * 1.4))
+    assert bt.main(["boxes", str(tmp_path), str(video), str(write_boxes(tmp_path / "b.json", [item]))]) == 0
+    marked = tuple(v / kf["scale"] for v in item["box"][2:])
+    assert seen == ([None] if kind == "bars" else [{f["t"]: pytest.approx(marked)}])
+
+
+def _inside(poly, pt):
+    return cv2.pointPolygonTest(np.float32(poly).reshape(-1, 1, 2), (float(pt[0]), float(pt[1])), False) >= 0
+
+
+@pytest.mark.parametrize("line, side, gone, kept", [
+    (_quad(150, 230, 300, 280), 0, [(200, 210)], [(350, 210), (200, 250), (200, 290), (120, 210)]),
+    (_quad(150, 220, 300, 270), 1, [(200, 290)], [(350, 290), (200, 250), (200, 210)]),
+    (_quad(150, 190, 300, 240), 0, [], [(200, 205), (200, 290)]),            # its edge is past the bars': nothing
+    (np.float32([(150, 195), (300, 230), (300, 280), (150, 280)]), 0,         # tilted: cut along its own edge
+     [(280, 215), (250, 205)], [(160, 205), (350, 210), (200, 290)]),
+])
+def test_clip_bars_past_a_text_line(line, side, gone, kept):
+    """Hook: on 86 of 303 frames the tracked bars box reached above the cert line's own blur, into "MS 66" (32 px
+    on average, 113 px at 13.47 s). The bars sit below the line, so the part of the bars box past the line's outer
+    edge, along the line's length only, is cut off; the rest of the bars box stays."""
+    bars = _quad(100, 200, 400, 300)
+    out = _detect.clip_bars(bars, line, side)
+    assert not any(_inside(out, p) for p in gone), np.round(out).tolist()
+    assert all(_inside(out, p) for p in kept), np.round(out).tolist()
+    T = _detect.clip_bars(bars[:, ::-1][[0, 3, 2, 1]], line[:, ::-1][[0, 3, 2, 1]], side)   # a vertical box
+    assert not any(_inside(T, p[::-1]) for p in gone) and all(_inside(T, p[::-1]) for p in kept)
+
+
+def test_boxes_bars_box_stops_at_the_text_line_over_it(vids, tmp_path, monkeypatch):
+    """Hook: a tall bars box takes 0.35 x its short side as margin, a thin text line over its top far less, so the
+    bars box reached past the line's blur into the next line. On every frame where both are seen, the bars box stops
+    at the line's outer edge along the line; the bars themselves stay covered."""
+    video, truth = vids["bar"]
+    kf = keyframes(tmp_path, video)
+    f = kf["frames"][0]
+    bx, by, bw, bh = kf_box(truth[f["i"]][0], kf["scale"], pad=0)
+    text = {"id": "line", "t": f["t"], "box": [bx, by - 0.05 * bh, 0.7 * bw, 0.3 * bh]}
+    bars = {"id": "code", "t": f["t"], "box": [bx, by + 0.35 * bh, bw, 0.65 * bh], "kind": "bars"}
+    assert bt.main(["boxes", str(tmp_path), str(video), str(write_boxes(tmp_path / "a.json", [text]))]) == 0
+    monkeypatch.setattr(_detect, "BOX_PAD_SHORT", 0.6)                  # the tall bars box's large margin
+    assert bt.main(["boxes", "--add", str(tmp_path), str(video), str(write_boxes(tmp_path / "b.json", [bars]))]) == 0
+    _, frames, _ = bt.load_json(tmp_path)
+    seen = {(g.i, g.target): g for g in frames if g.poly and g.state in ("tracked", "widened")}
+    both = [i for i, t in seen if t == 1 and (i, 0) in seen]
+    assert len(both) > 10
+    for i in both:
+        L, B = np.float32(seen[i, 0].poly), np.float32(seen[i, 1].poly)
+        top, x0, x1 = L[:, 1].min(), L[:, 0].min() + 3, L[:, 0].max() - 3
+        assert not any(_inside(B, (x, top - 4)) for x in np.linspace(x0, x1, 12)), (i, top, B[:, 1].min())
+        assert covered([(1, B)], truth[i][0]), i
+
+
+def test_clip_bars_axis_and_depth_come_from_the_anchor():
+    """Review: a near-square bars box padded across the bars can turn taller than wide, so its own edges would pick
+    the wrong axis: wide=True keeps the anchor's (across = top/bottom). depth: the cut never goes deeper than the
+    bars' pad on that side (a fraction of the box across the bars), so a mistracked line low in the box cannot
+    uncover the bars."""
+    sq, line = _quad(100, 200, 300, 420), _quad(150, 230, 250, 280)          # 200 wide, 220 tall after the pad
+    out = _detect.clip_bars(sq, line, 0, wide=True)
+    assert not _inside(out, (200, 215)) and _inside(out, (200, 300)) and _inside(out, (120, 215))
+    bars, low = _quad(100, 200, 400, 300), _quad(150, 270, 300, 290)        # the line's edge 70 % down the box
+    out = _detect.clip_bars(bars, low, 0, depth=0.3)
+    assert not _inside(out, (200, 215)) and _inside(out, (200, 245)) and _inside(out, (200, 260))
+
+
+def test_clip_bars_skips_widened_frames():
+    """Review: a widened frame (low confidence) carries the failsafe's extra margin; a widened line may be off. Only
+    frames where both are tracked are cut."""
+    bars, line = _quad(100, 200, 400, 300), _quad(150, 230, 300, 280)
+    frames = [bt.FrameBox(0, bt._plist(bars), 0.3, "widened", 6), bt.FrameBox(1, bt._plist(bars), 0.9, "tracked", 6)]
+    others = [bt.FrameBox(0, bt._plist(line), 0.9, "tracked", 5), bt.FrameBox(1, bt._plist(line), 0.3, "widened", 5)]
+    out = bt._clip_bars(frames, others, {0.0: [(0, 5)]})
+    assert [_inside(f.poly, (200, 210)) for f in out] == [True, True]
+
+
+def test_clip_bars_uses_the_lines_from_every_anchor():
+    """Hook 7-9 s: on those anchors the cert line's blur reached past both edges of the bars box, so it did not count
+    as covering a side there, and frames 263-291 kept the bars box above the cert. A line that covers a side on any
+    anchor cuts every frame where both are seen; a held line cuts nothing."""
+    bars, line = _quad(100, 200, 400, 300), _quad(150, 230, 300, 280)
+    frames = [bt.FrameBox(i, bt._plist(bars), 0.9, "tracked", 6) for i in (0, 30, 60)]
+    others = [bt.FrameBox(0, bt._plist(line), 0.9, "tracked", 5), bt.FrameBox(30, bt._plist(line), 0.9, "tracked", 5),
+              bt.FrameBox(60, bt._plist(line), 0.0, "held", 5)]
+    out = bt._clip_bars(frames, others, {0.0: [], 1.0: [(0, 5)], 2.0: []})
+    assert [_inside(f.poly, (200, 210)) for f in out] == [False, False, True]
+
+
 def test_boxes_short_anchor_box_takes_the_line_from_its_neighbours(tmp_path):
     """Real clip: on one keyframe the cert line ran off the frame edge (on another, glare hid its end), so that box
     held only part of the line, and the frames tracked from it left the other digits sharp once they came back into

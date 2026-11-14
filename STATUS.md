@@ -102,6 +102,18 @@ The probed rate was 30/1, and the 813 frames match ffprobe's count.
 
 (The full run log lives in a local, git-excluded working note and is not part of the repo.)
 
+## 1.1.4 real-clip check (2026-11-14)
+
+**Sample.** The same 15 s slab clip as 1.1.1–1.1.3 (SDR 1080×1920, 30 fps). Hidden: the certificate number and the barcode. Not in the repo.
+
+Stages: `detect --kinds barcode` 14 s · `boxes --add` for the certificate 84 s · barcode round (`"kind": "bars"`) 97 s · `apply` 7 s · `qa` 2 s. 244 tests pass.
+
+- **What blurred "MS 66":** mostly the certificate line's own margin (28–47 % of the grade line's height on 9 of 14 checked frames), not the barcode box. At 5 of 10 anchors `snap_to_ink` had grown the certificate box into the barcode, and the margin grew with it. Cutting the bars box at the certificate's top alone changed almost no visible pixel (it removed blur from blank label).
+- **After the fix:** the grade line is less covered at 7.50 s (47 → 26 %), 8.50 s (45 → 22 %), 9.07 s (68 → 42 %), 14.00 s (32 → 20 %) and 14.50 s (38 → 27 %). The certificate blur still reaches 30–52 px above the digit tops.
+- **Subagent QA (blind, 2× zooms, 14 frames from 5.50 s to 14.50 s):** no certificate digit readable and no barcode bar countable. One unreadable digit-top smudge shows through the blur on 8 frames, the same as in 1.1.3 (it lies inside the blurred area). The grade line scored one point higher on 6 frames.
+- **Owner review:** pass, 92/100 (1.1.3: 82/100). A code review then made the barcode cut safer (tracked frames only, no deeper than the box's margin); the grade line stayed the same.
+- **Next:** at 4.90–4.93 s the bars box is tracked about 500 px off the barcode (the same in 1.1.3). The barcode there is low-resolution and motion-blurred, and subagent reads disagree on whether its blocks can be counted. Check that frame range next.
+
 ## 1.1.3 real-clip check (2026-11-13)
 
 **Sample.** The same 15 s slab clip as 1.1.1 and 1.1.2 (SDR 1080×1920, 30 fps). Hidden: the certificate number and the barcode. Not in the repo.

@@ -781,10 +781,38 @@ def _nothing_found(args):
     return 0
 
 
+def _neighbours(frames, i):
+    """The other targets' frames on frame i where they were seen there (tracked or widened): a held frame repeats an
+    old position and must not shrink a bars box's pad or cut it (see _detect.bar_sides, _clip_bars)."""
+    return [f for f in frames if f.i == i and f.poly and f.state in ("tracked", "widened")]
+
+
 def _neighbour_polys(frames, i):
-    """The polygons other targets blur on frame i where they were seen there (tracked or widened): a held frame
-    repeats an old position and must not shrink a bars box's pad (see _detect.bar_sides)."""
-    return [f.poly for f in frames if f.i == i and f.poly and f.state in ("tracked", "widened")]
+    return [f.poly for f in _neighbours(frames, i)]
+
+
+def _clip_bars(frames, others, cut, wide=None, depth=(None, None)):
+    """Each seen frame of a bars target without its part past the text lines that cover a side on any of its anchors
+    ({t: [(side, target)]}, see _detect.bar_takers), where that line is seen on the same frame (Hook 7-9 s: the cert's
+    blur reached past both edges of the bars box on those anchors, so it covered no side there). Only frames where
+    both are tracked: a widened frame carries the failsafe's margin, a widened line may be off. wide, depth: the
+    anchor's axis and the deepest cut per side (see _detect.clip_bars)."""
+    import _detect
+    lines = sorted({c for a in cut.values() for c in a})
+    if not lines:
+        return frames
+    seen = {(f.i, f.target): f.poly for f in others if f.poly and f.state == "tracked"}
+    out = []
+    for f in frames:
+        if f.poly and f.state == "tracked":
+            poly = f.poly
+            for side, tid in lines:
+                if (f.i, tid) in seen:
+                    poly = _detect.clip_bars(poly, seen[f.i, tid], side, quad=f.poly, wide=wide, depth=depth[side])
+            if poly is not f.poly:
+                f = replace(f, poly=_plist(poly))
+        out.append(f)
+    return out
 
 
 def _boxes_cmd(args, meta):
@@ -832,14 +860,26 @@ def _boxes_cmd(args, meta):
         one = sorted({t: box for t, box in reversed(groups[iid])}.items())   # one box per time: the first (as tracked)
         anchors = [(t, _detect.snap_to_ink(imgs[round(t * fps)], box) if round(t * fps) in imgs else box)
                    for t, box in one]
-        side = False
+        side, cut = False, {}
         if iid in bars:                                                  # the other targets on each anchor's frame
-            side = {t: _detect.bar_sides(box, _neighbour_polys(all_frames, round(t * fps))) for t, box in anchors}
+            side = {}
+            for t, box in anchors:
+                nb = _neighbours(all_frames, round(t * fps))
+                lo, hi = _detect.bar_takers(box, [g.poly for g in nb])
+                side[t] = (True, True) if lo and hi else (not lo, not hi)
+                cut[t] = [] if lo and hi else [(s, nb[k].target) for s, ks in ((0, lo), (1, hi)) for k in ks]
         try:
-            frames = _detect.track_anchors(Path(args.video), anchors, size=(w, h), bars=side)
+            frames = _detect.track_anchors(Path(args.video), anchors, size=(w, h), bars=side,   # margin: box as marked
+                                           sizes=None if iid in bars else {t: box[2:] for t, box in one})
         except ValueError as e:
             raise ValueError(f"{iid}: {e}") from e
         frames, flagged = apply_failsafe([replace(f, target=tid) for f in frames], fps)
+        if any(cut.values()):                                            # the anchor's axis, the pads across it
+            wide = anchors[0][1][2] >= anchors[0][1][3]
+            fr = [(lambda p: (p[1], p[3], b[3]) if wide else (p[0], p[2], b[2]))(_detect.box_pads(*b[2:], side[t]))
+                  for t, b in anchors if cut[t]]
+            depth = tuple(min(x[k] / (x[0] + x[1] + x[2]) for x in fr) for k in (0, 1))
+            frames = _clip_bars(frames, all_frames, cut, wide, depth)
         all_frames, all_flag = merge_targets(all_frames, all_flag, frames, [(a, b, tid) for a, b in flagged],
                                              tid, False, fps)
         print(f"هدف {tid} = {iid}")
